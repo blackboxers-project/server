@@ -72,8 +72,14 @@ def ingest():
             except Exception:
                 dev["apparent_one_way_ms"] = None
     # Broadcast to dashboard clients
-    socketio.emit("ingest", {"device_id": device_id, "device_name": device_name,
-                             "payload": payload, "recv_ts": recv_ts, "device_ts": ts})
+    socketio.emit("ingest", {
+        "device_id": device_id,
+        "device_name": device_name,
+        "payload": payload,
+        "recv_ts": recv_ts,
+        "device_ts": ts
+    }, namespace="/dashboard")
+
     return jsonify({"status":"ok", "recv_ts": recv_ts})
 
 # Socket.IO namespace for persistent device connections (recommended for live ping/rtt)
