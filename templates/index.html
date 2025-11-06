@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Streaming Dashboard — Early Stage</title>
+  <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+  <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body class="bg-gray-100 text-gray-900">
+  <div class="max-w-6xl mx-auto p-6">
+    <header class="mb-6">
+      <h1 class="text-3xl font-semibold">Streaming Dashboard</h1>
+      <p class="text-sm text-gray-600">Live device streams, ping, and payload preview — prototype stage</p>
+    </header>
+
+    <main class="grid grid-cols-3 gap-6">
+      <!-- Left column: devices -->
+      <section class="col-span-1 bg-white rounded-lg shadow p-4">
+        <h2 class="font-bold mb-3">Connected Devices</h2>
+        <div id="device-list" class="space-y-3 text-sm"></div>
+      </section>
+
+      <!-- Middle column: live feed -->
+      <section class="col-span-2 bg-white rounded-lg shadow p-4">
+        <div class="flex justify-between items-center mb-3">
+          <h2 class="font-bold">Live Feed</h2>
+          <div class="text-xs text-gray-500">Incoming events appear here</div>
+        </div>
+        <div id="live-feed" class="h-96 overflow-auto bg-gray-50 p-3 rounded"></div>
+      </section>
+
+      <!-- Full width charts -->
+      <section class="col-span-3 bg-white rounded-lg shadow p-4">
+        <h2 class="font-bold mb-3">Metrics</h2>
+        <div class="grid grid-cols-3 gap-4">
+          <div>
+            <canvas id="rttChart" height="100"></canvas>
+          </div>
+          <div>
+            <canvas id="ingestRateChart" height="100"></canvas>
+          </div>
+          <div>
+            <div class="font-semibold mb-2">Quick Controls</div>
+            <div class="space-y-2 text-sm">
+              <div>
+                <label class="block text-xs text-gray-500">Device to ping</label>
+                <select id="ping-device-select" class="w-full border rounded p-2"></select>
+              </div>
+              <button id="ping-btn" class="w-full bg-blue-600 text-white p-2 rounded">Ping device</button>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script src="/static/js/dashboard.js"></script>
+</body>
+</html>
