@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>ARCHIVES | SOC</title>
+    <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg: #0b1120;
+            --panel: #1e293b;
+            --border: #334155;
+            --text: #94a3b8;
+            --red: #ef4444;
+            --orange: #f59e0b;
+            --green: #10b981;
+            --blue: #3b82f6;
+        }
+        body { background: var(--bg); color: var(--text); font-family: 'Share Tech Mono', monospace; padding: 20px; }
+
+        /* Navigation */
+        .nav { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid var(--border); padding-bottom: 15px; margin-bottom: 20px; }
+        h1 { margin: 0; color: white; letter-spacing: 2px; }
+        .btn-back { background: transparent; border: 1px solid var(--green); color: var(--green); padding: 8px 16px; cursor: pointer; font-family: inherit; text-decoration: none; transition: 0.2s; }
+        .btn-back:hover { background: var(--green); color: black; }
+
+        /* Grid Layout */
+        .archive-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(400px, 1fr)); gap: 20px; }
+
+        /* Panels */
+        .section { background: var(--panel); border-radius: 6px; border: 1px solid var(--border); overflow: hidden; display: flex; flex-direction: column; max-height: 600px; }
+        .section-header { padding: 12px 15px; font-weight: bold; color: white; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; }
+        .count-badge { background: rgba(0,0,0,0.3); padding: 2px 8px; border-radius: 4px; font-size: 0.8rem; }
+
+        /* List Items */
+        ul { list-style: none; padding: 0; margin: 0; overflow-y: auto; flex-grow: 1; }
+        li { padding: 10px 15px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; font-size: 0.9rem; transition: background 0.2s; }
+        li:hover { background: #2a3850; }
+        li:last-child { border-bottom: none; }
+
+        .file-info { display: flex; flex-direction: column; }
+        .timestamp { font-size: 0.75rem; color: #64748b; }
+        .plane-id { color: white; font-weight: bold; }
+
+        /* Delete Button */
+        .btn-delete { background: transparent; border: 1px solid #475569; color: #64748b; cursor: pointer; padding: 4px 8px; border-radius: 4px; margin-left: 10px; font-family: inherit; font-size: 0.75rem; transition: 0.2s; }
+        .btn-delete:hover { border-color: var(--red); color: var(--red); background: rgba(239, 68, 68, 0.1); }
+
+        /* Empty State */
+        .empty-msg { padding: 20px; text-align: center; color: #475569; font-style: italic; }
+
+        /* Specific Colors based on Category ID */
+        .cat-security .section-header { background: rgba(239, 68, 68, 0.2); color: var(--red); border-bottom-color: var(--red); }
+        .cat-emergency .section-header { background: rgba(239, 68, 68, 0.2); color: var(--red); border-bottom-color: var(--red); }
+        .cat-crash .section-header { background: rgba(245, 158, 11, 0.2); color: var(--orange); border-bottom-color: var(--orange); }
+        .cat-radio_fail .section-header { background: rgba(245, 158, 11, 0.2); color: var(--orange); border-bottom-color: var(--orange); }
+        .cat-lost .section-header { background: rgba(245, 158, 11, 0.2); color: var(--orange); border-bottom-color: var(--orange); }
+        .cat-normal .section-header { background: rgba(59, 130, 246, 0.1); color: var(--blue); border-bottom-color: var(--blue); }
+    </style>
+</head>
+<body>
+
+    <div class="nav">
+        <h1>// FLIGHT RECORD ARCHIVES</h1>
+        <a href="/" class="btn-back">← LIVE MONITOR</a>
+    </div>
+
+    <div id="loading" style="text-align:center; margin-top:50px;">ACCESSING DATABASE...</div>
+
+    <div class="archive-grid" id="grid-container" style="display:none">
+        </div>
+
+    <script>
+        // Configuration for display names and grouping
+        const CAT_CONFIG = {
+            "security":   { title: "☠️ SECURITY THREATS (7500)", order: 1 },
+            "emergency":  { title: "⚠ GENERAL EMERGENCY (7700)", order: 2 },
+            "crash":      { title: "🔥 CONFIRMED CRASHES",       order: 3 },
+            "radio_fail": { title: "🔇 RADIO FAILURES (7600)",   order: 4 },
+            "lost":       { title: "❓ SIGNAL LOST",             order: 5 },
+            "normal":     { title: "✈ STANDARD OPERATIONS",     order: 6 }
+        };
+
+        async function loadLogs() {
+            try {
+                const response = await fetch('/api/logs');
+                const data = await response.json();
+
+                renderGrid(data);
+                document.getElementById('loading').style.display = 'none';
+                document.getElementById('grid-container').style.display = 'grid';
+
+            } catch (error) {
+                document.getElementById('loading').innerText = "CONNECTION ERROR: " + error;
+                console.error(error);
+            }
+        }
+
+        function renderGrid(data) {
+            const container = document.getElementById('grid-container');
+            container.innerHTML = '';
+
+            // Sort categories based on our config order
+            const categories = Object.keys(data).sort((a, b) => {
+                return (CAT_CONFIG[a]?.order || 99) - (CAT_CONFIG[b]?.order || 99);
+            });
+
+            categories.forEach(catKey => {
+                const files = data[catKey];
+                const config = CAT_CONFIG[catKey] || { title: catKey.toUpperCase(), order: 99 };
+
+                // Create Section Panel
+                const section = document.createElement('div');
+                section.className = `section cat-${catKey}`;
+
+                // Header
+                section.innerHTML = `
+                    <div class="section-header">
+                        <span>${config.title}</span>
+                        <span class="count-badge">${files.length}</span>
+                    </div>
+                `;
+
+                // File List
+                const ul = document.createElement('ul');
+                if (files.length === 0) {
+                    ul.innerHTML = '<div class="empty-msg">No records found.</div>';
+                } else {
+                    files.forEach(filename => {
+                        const li = document.createElement('li');
+
+                        // Parse Filename (Format: YYYYMMDD_HHMMSS_PLANEID.jsonl)
+                        let displayTime = "UNKNOWN DATE";
+                        let displayId = filename;
+
+                        const parts = filename.split('_');
+                        if(parts.length >= 3) {
+                            // Format: 20231025 103055
+                            const d = parts[0];
+                            const t = parts[1];
+                            displayTime = `${d.substring(0,4)}-${d.substring(4,6)}-${d.substring(6,8)} ${t.substring(0,2)}:${t.substring(2,4)}`;
+                            displayId = parts.slice(2).join('_').replace('.jsonl','');
+                        }
+
+                        li.innerHTML = `
+                            <div class="file-info">
+                                <span class="plane-id">${displayId}</span>
+                                <span class="timestamp">${displayTime}</span>
+                            </div>
+                            <div>
+                                <a href="#" style="color:#64748b; text-decoration:none; font-size:0.7rem; margin-right:5px">VIEW</a>
+                                <button class="btn-delete" onclick="deleteLog('${catKey}', '${filename}')">DELETE</button>
+                            </div>
+                        `;
+                        ul.appendChild(li);
+                    });
+                }
+
+                section.appendChild(ul);
+                container.appendChild(section);
+            });
+        }
+
+        async function deleteLog(category, filename) {
+            if(!confirm(`PERMANENTLY DELETE RECORD?\n\nFile: ${filename}\nCategory: ${category}`)) return;
+
+            try {
+                const res = await fetch(`/api/logs/${category}/${filename}`, { method: 'DELETE' });
+                const result = await res.json();
+
+                if (res.ok) {
+                    // Refresh the view
+                    loadLogs();
+                } else {
+                    alert("Error deleting file: " + result.error);
+                }
+            } catch (e) {
+                alert("Network error: " + e);
+            }
+        }
+
+        // Initialize
+        loadLogs();
+    </script>
+</body>
+</html>

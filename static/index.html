@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>SOC | NEXT-GEN BLACK BOX</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap" rel="stylesheet">
+
+    <style>
+        :root {
+            --bg: #0b1120;
+            --panel: #1e293b;
+            --text: #94a3b8;
+            --green: #10b981;
+            --red: #ef4444;
+            --orange: #f59e0b;
+            --blue: #3b82f6;
+            --grey: #475569;
+        }
+        body { background: var(--bg); color: var(--text); font-family: 'Share Tech Mono', monospace; margin: 0; padding: 20px; box-sizing: border-box; overflow-x: hidden;}
+
+        /* Layout */
+        .header { display: flex; justify-content: space-between; border-bottom: 2px solid #334155; padding-bottom: 15px; margin-bottom: 20px; }
+
+        /* 4-Column Grid */
+        .dashboard-columns {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr 0.8fr; /* Past flights column slightly smaller */
+            gap: 15px;
+            height: 85vh;
+        }
+
+        .column { background: #0f172a; padding: 10px; border-radius: 8px; border: 1px solid #334155; overflow-y: auto; }
+        .col-title {
+            font-size: 1.1rem;
+            color: white;
+            border-bottom: 1px solid #334155;
+            padding-bottom: 10px;
+            margin-bottom: 10px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            position: sticky; top: 0; background: #0f172a; z-index: 10;
+        }
+
+        /* Plane Card */
+        .card {
+            background: var(--panel);
+            border-left: 4px solid var(--green);
+            padding: 12px;
+            margin-bottom: 10px;
+            border-radius: 4px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+            animation: fadeIn 0.5s ease;
+        }
+
+        .card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+        .plane-id { font-size: 1.3rem; color: white; font-weight: bold; }
+        .squawk-box { background: black; color: var(--green); padding: 2px 6px; border: 1px solid var(--green); font-size: 1rem; }
+
+        /* Data Grid */
+        .telemetry-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; font-size: 0.85rem; }
+        .data-point { background: rgba(0,0,0,0.3); padding: 4px; border-radius: 3px; }
+        .label { color: #64748b; font-size: 0.65rem; display: block; }
+
+        /* Debug Footer */
+        #debug-console { position: fixed; bottom: 0; left: 0; right: 0; height: 30px; background: black; color: #555; font-size: 10px; padding: 5px; border-top: 1px solid #333; white-space: nowrap; overflow: hidden;}
+
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
+
+        /* STATE STYLES */
+
+        /* Emergency (Flash Red) */
+        .state-emergency {
+            border-left-color: var(--red);
+            background: #2f1212;
+            box-shadow: 0 0 10px rgba(239, 68, 68, 0.2);
+            animation: flash 2s infinite;
+        }
+        @keyframes flash { 0% { border-color: var(--red); } 50% { border-color: #7f1d1d; } 100% { border-color: var(--red); } }
+
+        /* Investigation (Orange/Alert) */
+        .state-investigation {
+            border-left-color: var(--orange);
+            background: #2a2010; /* Slight orange tint bg */
+            border: 1px solid var(--orange);
+        }
+
+        /* Past / Landed (Dimmed) */
+        .state-landed {
+            border-left-color: var(--grey);
+            opacity: 0.6;
+            filter: grayscale(1);
+            background: #111;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+    <div>
+        <h1 style="margin:0; color:white; font-size: 1.5rem;">SOC // BLACK BOX MONITOR</h1>
+        <small id="connection-status" style="color:red">● DISCONNECTED</small>
+    </div>
+    <div style="text-align:right">
+        <h2 id="clock" style="color:white; font-size: 1.2rem; margin:0 0 10px 0;">--:--:-- UTC</h2>
+        <a href="/logs" style="color:#94a3b8; text-decoration:none; border:1px solid #334155; padding:5px 10px; font-size:0.8rem; border-radius:4px;">📂 OPEN ARCHIVES</a>
+    </div>
+</div>
+
+    <div class="dashboard-columns">
+
+        <div class="column" id="col-active">
+            <div class="col-title" style="color:var(--green)">Active Flights</div>
+            <div id="container-active"></div>
+        </div>
+
+        <div class="column" id="col-emergency" style="border-color: rgba(239, 68, 68, 0.3);">
+            <div class="col-title" style="color:var(--red)">⚠ Emergency</div>
+            <div id="container-emergency"></div>
+        </div>
+
+        <div class="column" id="col-investigation" style="border-color: rgba(245, 158, 11, 0.3);">
+            <div class="col-title" style="color:var(--orange)">🔍 Investigation</div>
+            <div id="container-investigation"></div>
+        </div>
+
+        <div class="column" id="col-past">
+            <div class="col-title" style="color:var(--grey)">Past Flights</div>
+            <div id="container-past"></div>
+        </div>
+
+    </div>
+
+    <div id="debug-console">System Ready...</div>
+
+    <script>
+        const debugConsole = document.getElementById('debug-console');
+        const flights = {};
+        let ws = null;
+
+        function log(msg) { debugConsole.innerText = `[${new Date().toLocaleTimeString()}] ${msg}`; }
+        setInterval(() => document.getElementById('clock').innerText = new Date().toUTCString().split(' ')[4] + " UTC", 1000);
+
+        function connect() {
+            ws = new WebSocket(`ws://${window.location.host}/ws/dashboard`);
+            ws.onopen = () => { document.getElementById('connection-status').innerHTML = '<span style="color:#10b981">● SYSTEM ONLINE</span>'; log("Connected"); };
+            ws.onclose = () => { document.getElementById('connection-status').innerHTML = '<span style="color:red">● DISCONNECTED</span>'; setTimeout(connect, 2000); };
+            ws.onmessage = (event) => {
+                try {
+                    const msg = JSON.parse(event.data);
+                    if (msg.type === 'status_update') handleStatus(msg.plane_id, msg.state);
+                    else if (msg.type === 'telemetry') updateTelemetry(msg.plane_id, msg.data, msg.squawk);
+                } catch (e) { console.error(e); }
+            };
+        }
+
+        function getContainerId(squawk, status) {
+            // 1. Past Flights (Safely Landed)
+            if (status === 'LANDED') return 'container-past';
+
+            // 2. Investigation (Crashed or Lost Signal)
+            if (status === 'CRASHED' || status === 'LOST_SIGNAL') return 'container-investigation';
+
+            // 3. Emergency (Squawk 7xxx)
+            if (['7500', '7600', '7700'].includes(squawk)) return 'container-emergency';
+
+            // 4. Default Active
+            return 'container-active';
+        }
+
+        function createCard(id) {
+            const div = document.createElement('div');
+            div.className = 'card';
+            div.id = `card-${id}`;
+            div.innerHTML = `
+                <div class="card-header">
+                    <span class="plane-id">${id}</span>
+                    <span class="squawk-box" id="squawk-${id}">1200</span>
+                </div>
+                <div class="status-text" id="status-${id}" style="margin-bottom:5px; color:#3b82f6; font-weight:bold; font-size: 0.8rem;">INIT</div>
+                <div class="telemetry-grid">
+                    <div class="data-point"><span class="label">PITCH/ROLL</span><span id="gyro-${id}">--</span></div>
+                    <div class="data-point"><span class="label">AUDIO</span><span id="audio-${id}">--</span></div>
+                    <div class="data-point"><span class="label">ALT</span><span id="alt-${id}">--</span></div>
+                    <div class="data-point"><span class="label">STATUS</span><span id="ping-${id}">●</span></div>
+                </div>
+            `;
+            return div;
+        }
+
+        function handleStatus(id, state) {
+            if (!flights[id]) flights[id] = { squawk: '1200', status: 'ONLINE' };
+            if(state.status) flights[id].status = state.status;
+            if(state.squawk) flights[id].squawk = String(state.squawk);
+
+            let card = document.getElementById(`card-${id}`);
+            if (!card) {
+                card = createCard(id);
+                document.getElementById('container-active').appendChild(card);
+            }
+
+            // Update Text
+            const statusEl = document.getElementById(`status-${id}`);
+            if(statusEl) statusEl.innerText = flights[id].status;
+
+            // Determine correct column
+            const targetId = getContainerId(flights[id].squawk, flights[id].status);
+            const targetContainer = document.getElementById(targetId);
+
+            // Move Card if needed
+            if (card.parentElement.id !== targetId && targetContainer) {
+                targetContainer.appendChild(card);
+
+                // Reset Classes
+                card.className = 'card';
+
+                // Apply specific styling
+                if (targetId === 'container-emergency') card.classList.add('state-emergency');
+                if (targetId === 'container-investigation') card.classList.add('state-investigation');
+                if (targetId === 'container-past') card.classList.add('state-landed');
+            }
+        }
+
+        function updateTelemetry(id, data, squawk) {
+            if (!flights[id]) handleStatus(id, {status: 'ONLINE', squawk: squawk});
+
+            const currentSquawk = String(squawk || '1200');
+            if (flights[id].squawk !== currentSquawk) {
+                handleStatus(id, {squawk: currentSquawk});
+            }
+            const sqEl = document.getElementById(`squawk-${id}`);
+            if(sqEl) sqEl.innerText = currentSquawk;
+
+            try {
+                document.getElementById(`gyro-${id}`).innerText = `${data.gyro?.x?.toFixed(1) || 0}/${data.gyro?.y?.toFixed(1) || 0}`;
+                document.getElementById(`audio-${id}`).innerText = `${data.audio_level?.toFixed(0) || 0}dB`;
+                document.getElementById(`alt-${id}`).innerText = `${data.altitude?.toFixed(0) || 0}ft`;
+            } catch(e) {}
+        }
+
+        connect();
+    </script>
+</body>
+</html>

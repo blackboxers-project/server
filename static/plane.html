@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+        body { background: #000; color: #0f0; font-family: monospace; text-align: center; padding: 20px; }
+        input { background: #333; color: white; border: 1px solid #0f0; padding: 10px; font-size: 1.2rem; width: 100px; text-align: center;}
+        button { padding: 15px; width: 100%; margin-top: 10px; font-size: 1.2rem; border: none; font-weight: bold; cursor: pointer;}
+        .btn-land { background: #3b82f6; color: white; }
+        .btn-start { background: #10b981; color: black; }
+        .data-box { border: 1px solid #333; margin: 20px 0; padding: 10px; }
+    </style>
+</head>
+<body>
+    <h2>✈ FLIGHT RECORDER</h2>
+    <h1 id="plane-id">...</h1>
+
+    <div style="margin-bottom: 20px;">
+        <label>SQUAWK CODE:</label><br>
+        <input type="number" id="squawk-input" value="1200">
+    </div>
+
+    <button id="btn-connect" class="btn-start" onclick="connect()">CONNECT TO SOC</button>
+    <button id="btn-land" class="btn-land" onclick="land()" style="display:none">LAND (END FLIGHT)</button>
+
+    <div class="data-box">
+        <div id="status">OFFLINE</div>
+        <div id="telemetry">No Data</div>
+    </div>
+
+    <script>
+        let planeId = "PLANE-" + Math.floor(Math.random() * 9000 + 1000);
+        document.getElementById('plane-id').innerText = planeId;
+
+        let ws;
+        let active = false;
+        let gyro = {x:0, y:0, z:0};
+        let audioLevel = 0;
+
+        function connect() {
+            ws = new WebSocket(`ws://${window.location.host}/ws/plane/${planeId}`);
+
+            ws.onopen = () => {
+                active = true;
+                document.getElementById('status').innerText = "TRANSMITTING";
+                document.getElementById('status').style.color = "#10b981";
+                document.getElementById('btn-connect').style.display = 'none';
+                document.getElementById('btn-land').style.display = 'block';
+
+                // Start Sensors
+                initAudio();
+                if (window.DeviceOrientationEvent) window.addEventListener('deviceorientation', handleGyro);
+                setInterval(sendData, 200); // 5Hz
+            };
+
+            ws.onclose = () => {
+                document.getElementById('status').innerText = "DISCONNECTED";
+                document.getElementById('status').style.color = "red";
+            };
+        }
+
+        function land() {
+            if(ws) ws.send(JSON.stringify({type: 'disconnect'}));
+            location.reload();
+        }
+
+        function sendData() {
+            if (!active) return;
+            const squawk = document.getElementById('squawk-input').value;
+
+            const payload = {
+                gyro: gyro,
+                audio_level: audioLevel,
+                squawk: squawk,
+                timestamp: Date.now()
+            };
+            ws.send(JSON.stringify(payload));
+
+            document.getElementById('telemetry').innerHTML =
+                `SQUAWK: ${squawk}<br>PITCH: ${gyro.x.toFixed(1)}<br>AUDIO: ${audioLevel.toFixed(0)}`;
+        }
+
+        function handleGyro(e) { gyro = {x: e.beta, y: e.gamma, z: e.alpha}; }
+
+        function initAudio() {
+            navigator.mediaDevices.getUserMedia({ audio: true }).then(stream => {
+                const audioContext = new AudioContext();
+                const analyser = audioContext.createAnalyser();
+                const microphone = audioContext.createMediaStreamSource(stream);
+                microphone.connect(analyser);
+                analyser.fftSize = 32;
+                const dataArray = new Uint8Array(analyser.frequencyBinCount);
+
+                setInterval(() => {
+                    analyser.getByteFrequencyData(dataArray);
+                    let sum = 0;
+                    for(let i = 0; i < dataArray.length; i++) sum += dataArray[i];
+                    audioLevel = sum / dataArray.length;
+                }, 100);
+            });
+        }
+    </script>
+</body>
+</html>
