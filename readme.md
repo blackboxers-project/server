@@ -1,5 +1,3 @@
-
-
 # ✈️ BlackBox Sentinel
 
 **Secure Flight Telemetry logging & Forensics System**
