@@ -1,4 +1,9 @@
+fastapi
+ginga
+uvicorn
 flask
+websockets
+rich
 flask-socketio
 eventlet
 Flask
