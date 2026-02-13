@@ -1,5 +1,6 @@
 # ✈️ BlackBox Sentinel
 
+
 **Secure Flight Telemetry logging & Forensics System**
 
 **BlackBox Sentinel** is a high-fidelity flight data recorder backend designed for accountability and non-repudiation. It captures real-time telemetry via WebSockets, automatically categorizes flights based on squawk codes/outcomes, and secures every byte of data using a **blockchain-lite immutable ledger**.
