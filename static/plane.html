@@ -1,103 +1,292 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Flight Deck</title>
     <style>
-        body { background: #000; color: #0f0; font-family: monospace; text-align: center; padding: 20px; }
-        input { background: #333; color: white; border: 1px solid #0f0; padding: 10px; font-size: 1.2rem; width: 100px; text-align: center;}
-        button { padding: 15px; width: 100%; margin-top: 10px; font-size: 1.2rem; border: none; font-weight: bold; cursor: pointer;}
-        .btn-land { background: #3b82f6; color: white; }
-        .btn-start { background: #10b981; color: black; }
-        .data-box { border: 1px solid #333; margin: 20px 0; padding: 10px; }
+        :root {
+            --bg-color: #000000;
+            --text-color: #00ff00;
+            --alert-color: #ff0000;
+            --warn-color: #ffaa00;
+            --ui-gray: #333;
+        }
+
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            font-family: 'Courier New', Courier, monospace;
+            text-align: center;
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            box-sizing: border-box;
+        }
+
+        h1 { margin: 0; font-size: 1.5rem; border-bottom: 2px solid var(--ui-gray); padding-bottom: 10px; }
+
+        #plane-id { color: white; font-weight: bold; font-size: 1.2rem; margin-top: 5px;}
+
+        /* Instrument Panel */
+        .panel {
+            flex-grow: 1;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            gap: 15px;
+        }
+
+        .data-row {
+            display: flex;
+            justify-content: space-between;
+            font-size: 1.2rem;
+            border: 1px solid var(--ui-gray);
+            padding: 10px;
+            background: #111;
+        }
+
+        /* Squawk Input */
+        .transponder {
+            border: 2px solid var(--text-color);
+            padding: 15px;
+            border-radius: 8px;
+            margin: 10px 0;
+        }
+
+        input[type="number"] {
+            background: #222;
+            color: white;
+            border: none;
+            font-size: 2rem;
+            width: 120px;
+            text-align: center;
+            font-family: monospace;
+        }
+
+        /* Buttons */
+        button {
+            padding: 15px;
+            font-size: 1rem;
+            font-weight: bold;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            width: 100%;
+            margin-bottom: 10px;
+            text-transform: uppercase;
+        }
+
+        .btn-connect { background-color: var(--text-color); color: black; font-size: 1.2rem;}
+        .btn-disconnect { background-color: var(--ui-gray); color: white; }
+
+        .emergency-pad {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 10px;
+            margin-top: 10px;
+        }
+
+        .btn-7700 { background-color: var(--alert-color); color: white; }
+        .btn-7600 { background-color: var(--warn-color); color: black; }
+        .btn-7500 { background-color: #800000; color: white; } /* Hijack */
+
+        /* Visualizer */
+        #connection-status { margin-bottom: 10px; font-weight: bold; }
+        .blink { animation: blinker 1s linear infinite; }
+        @keyframes blinker { 50% { opacity: 0; } }
+
     </style>
 </head>
 <body>
-    <h2>✈ FLIGHT RECORDER</h2>
-    <h1 id="plane-id">...</h1>
 
-    <div style="margin-bottom: 20px;">
-        <label>SQUAWK CODE:</label><br>
-        <input type="number" id="squawk-input" value="1200">
-    </div>
+    <header>
+        <h1>FLIGHT DECK</h1>
+        <div id="plane-id">INITIALIZING...</div>
+    </header>
 
-    <button id="btn-connect" class="btn-start" onclick="connect()">CONNECT TO SOC</button>
-    <button id="btn-land" class="btn-land" onclick="land()" style="display:none">LAND (END FLIGHT)</button>
+    <div class="panel">
 
-    <div class="data-box">
-        <div id="status">OFFLINE</div>
-        <div id="telemetry">No Data</div>
+        <div id="connection-status" style="color: #666;">OFFLINE</div>
+
+        <div class="transponder">
+            <label>TRANSPONDER (SQUAWK)</label><br>
+            <input type="number" id="squawk-code" value="1200" onfocus="this.select()">
+        </div>
+
+        <div class="data-row">
+            <span>PITCH</span>
+            <span id="pitch-val">0°</span>
+        </div>
+        <div class="data-row">
+            <span>ROLL</span>
+            <span id="roll-val">0°</span>
+        </div>
+        <div class="data-row">
+            <span>NOISE</span>
+            <span id="audio-val">0%</span>
+        </div>
+
+        <div id="pre-flight">
+            <button class="btn-connect" onclick="startFlight()">🔌 CONNECT SYSTEMS</button>
+            <small style="color:#666">Requires Sensor & Mic Permissions</small>
+        </div>
+
+        <div id="in-flight" style="display:none;">
+            <div class="emergency-pad">
+                <button class="btn-7600" onclick="setSquawk(7600)">7600<br>RADIO</button>
+                <button class="btn-7700" onclick="setSquawk(7700)">7700<br>EMERG</button>
+                <button class="btn-7500" onclick="setSquawk(7500)">7500<br>HIJACK</button>
+            </div>
+            <button class="btn-disconnect" onclick="endFlight()">END FLIGHT</button>
+        </div>
+
     </div>
 
     <script>
-        let planeId = "PLANE-" + Math.floor(Math.random() * 9000 + 1000);
+        // 1. GENERATE IDENTITY
+        const planeId = "FLIGHT-" + Math.floor(Math.random() * 899 + 100);
         document.getElementById('plane-id').innerText = planeId;
 
-        let ws;
-        let active = false;
-        let gyro = {x:0, y:0, z:0};
-        let audioLevel = 0;
+        // 2. STATE VARIABLES
+        let socket = null;
+        let isFlying = false;
+        let telemetry = {
+            pitch: 0,
+            roll: 0,
+            heading: 0,
+            noise: 0
+        };
 
-        function connect() {
-            ws = new WebSocket(`ws://${window.location.host}/ws/plane/${planeId}`);
+        // 3. START FLIGHT (Triggered by user click for permissions)
+        async function startFlight() {
+            // Request iOS 13+ Motion Permissions
+            if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
+                try {
+                    const response = await DeviceOrientationEvent.requestPermission();
+                    if (response !== 'granted') {
+                        alert("Motion permission required to fly!");
+                        return;
+                    }
+                } catch (e) {
+                    console.error(e);
+                }
+            }
 
-            ws.onopen = () => {
-                active = true;
-                document.getElementById('status').innerText = "TRANSMITTING";
-                document.getElementById('status').style.color = "#10b981";
-                document.getElementById('btn-connect').style.display = 'none';
-                document.getElementById('btn-land').style.display = 'block';
+            // Initialize Microphone
+            try {
+                await initAudio();
+            } catch (e) {
+                console.warn("Audio failed or denied", e);
+            }
 
-                // Start Sensors
-                initAudio();
-                if (window.DeviceOrientationEvent) window.addEventListener('deviceorientation', handleGyro);
-                setInterval(sendData, 200); // 5Hz
+            // Start Orientation Listener
+            window.addEventListener('deviceorientation', handleMotion);
+
+            // Connect Websocket
+            connectWebSocket();
+
+            // UI Update
+            document.getElementById('pre-flight').style.display = 'none';
+            document.getElementById('in-flight').style.display = 'block';
+            document.getElementById('connection-status').innerText = "TRANSMITTING";
+            document.getElementById('connection-status').style.color = "#00ff00";
+            document.getElementById('connection-status').classList.add("blink");
+
+            isFlying = true;
+        }
+
+        function endFlight() {
+            if (socket) {
+                socket.send(JSON.stringify({ type: 'disconnect' }));
+                socket.close();
+            }
+            window.location.reload();
+        }
+
+        // 4. WEBSOCKET LOGIC
+        function connectWebSocket() {
+            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const host = window.location.host;
+            socket = new WebSocket(`${protocol}//${host}/ws/plane/${planeId}`);
+
+            socket.onopen = () => {
+                // Start sending data loop (5Hz)
+                setInterval(sendTelemetry, 200);
             };
 
-            ws.onclose = () => {
-                document.getElementById('status').innerText = "DISCONNECTED";
-                document.getElementById('status').style.color = "red";
+            socket.onclose = () => {
+                document.getElementById('connection-status').innerText = "LINK LOST";
+                document.getElementById('connection-status').style.color = "red";
+                document.getElementById('connection-status').classList.remove("blink");
+                isFlying = false;
             };
         }
 
-        function land() {
-            if(ws) ws.send(JSON.stringify({type: 'disconnect'}));
-            location.reload();
-        }
+        function sendTelemetry() {
+            if (!socket || socket.readyState !== WebSocket.OPEN) return;
 
-        function sendData() {
-            if (!active) return;
-            const squawk = document.getElementById('squawk-input').value;
+            const squawk = document.getElementById('squawk-code').value;
 
             const payload = {
-                gyro: gyro,
-                audio_level: audioLevel,
                 squawk: squawk,
-                timestamp: Date.now()
+                altitude: 30000, // Simulated static alt for now
+                speed: 450,      // Simulated static speed
+                heading: telemetry.heading,
+                latitude: 0,     // Could add GPS later
+                longitude: 0,
+                // Sensor Data
+                pitch: telemetry.pitch,
+                roll: telemetry.roll,
+                audio_level: telemetry.noise
             };
-            ws.send(JSON.stringify(payload));
 
-            document.getElementById('telemetry').innerHTML =
-                `SQUAWK: ${squawk}<br>PITCH: ${gyro.x.toFixed(1)}<br>AUDIO: ${audioLevel.toFixed(0)}`;
+            socket.send(JSON.stringify(payload));
+
+            // Update local UI
+            document.getElementById('pitch-val').innerText = Math.round(telemetry.pitch) + "°";
+            document.getElementById('roll-val').innerText = Math.round(telemetry.roll) + "°";
+            document.getElementById('audio-val').innerText = Math.round(telemetry.noise) + "%";
         }
 
-        function handleGyro(e) { gyro = {x: e.beta, y: e.gamma, z: e.alpha}; }
+        // 5. SENSOR HANDLERS
+        function handleMotion(event) {
+            // Beta = Pitch (front/back tilt)
+            // Gamma = Roll (left/right tilt)
+            // Alpha = Heading (compass)
+            telemetry.pitch = event.beta || 0;
+            telemetry.roll = event.gamma || 0;
+            telemetry.heading = event.alpha || 0;
+        }
 
-        function initAudio() {
-            navigator.mediaDevices.getUserMedia({ audio: true }).then(stream => {
-                const audioContext = new AudioContext();
-                const analyser = audioContext.createAnalyser();
-                const microphone = audioContext.createMediaStreamSource(stream);
-                microphone.connect(analyser);
-                analyser.fftSize = 32;
-                const dataArray = new Uint8Array(analyser.frequencyBinCount);
+        async function initAudio() {
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            const analyser = audioContext.createAnalyser();
+            const microphone = audioContext.createMediaStreamSource(stream);
 
-                setInterval(() => {
-                    analyser.getByteFrequencyData(dataArray);
-                    let sum = 0;
-                    for(let i = 0; i < dataArray.length; i++) sum += dataArray[i];
-                    audioLevel = sum / dataArray.length;
-                }, 100);
-            });
+            microphone.connect(analyser);
+            analyser.fftSize = 64; // Low res is fine for volume
+            const dataArray = new Uint8Array(analyser.frequencyBinCount);
+
+            // Audio sampling loop
+            setInterval(() => {
+                analyser.getByteFrequencyData(dataArray);
+                let sum = 0;
+                // Calculate average volume
+                for(let i = 0; i < dataArray.length; i++) {
+                    sum += dataArray[i];
+                }
+                const average = sum / dataArray.length;
+                // Normalize 0-255 to 0-100%
+                telemetry.noise = (average / 128) * 100;
+            }, 100);
+        }
+
+        function setSquawk(code) {
+            document.getElementById('squawk-code').value = code;
         }
     </script>
 </body>
