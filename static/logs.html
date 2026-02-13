@@ -23,7 +23,11 @@
         .btn-back:hover { background: var(--green); color: black; }
 
         /* Grid Layout */
-        .archive-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(400px, 1fr)); gap: 20px; }
+        .archive-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(450px, 1fr)); /* Slightly wider for buttons */
+            gap: 20px;
+        }
 
         /* Panels */
         .section { background: var(--panel); border-radius: 6px; border: 1px solid var(--border); overflow: hidden; display: flex; flex-direction: column; max-height: 600px; }
@@ -32,22 +36,44 @@
 
         /* List Items */
         ul { list-style: none; padding: 0; margin: 0; overflow-y: auto; flex-grow: 1; }
-        li { padding: 10px 15px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; font-size: 0.9rem; transition: background 0.2s; }
+        li { padding: 15px; border-bottom: 1px solid var(--border); display: flex; flex-direction: column; gap: 10px; font-size: 0.9rem; transition: background 0.2s; }
         li:hover { background: #2a3850; }
         li:last-child { border-bottom: none; }
 
+        .row-top { display: flex; justify-content: space-between; align-items: center; width: 100%; }
+
         .file-info { display: flex; flex-direction: column; }
         .timestamp { font-size: 0.75rem; color: #64748b; }
-        .plane-id { color: white; font-weight: bold; }
+        .plane-id { color: white; font-weight: bold; font-size: 1.1em; }
 
-        /* Delete Button */
-        .btn-delete { background: transparent; border: 1px solid #475569; color: #64748b; cursor: pointer; padding: 4px 8px; border-radius: 4px; margin-left: 10px; font-family: inherit; font-size: 0.75rem; transition: 0.2s; }
+        /* Buttons */
+        .btn-group { display: flex; gap: 8px; }
+
+        button { font-family: 'Share Tech Mono', monospace; cursor: pointer; border-radius: 4px; padding: 4px 10px; font-size: 0.8rem; border: 1px solid; background: transparent; transition: 0.2s; }
+
+        .btn-verify { border-color: var(--blue); color: var(--blue); }
+        .btn-verify:hover { background: rgba(59, 130, 246, 0.2); }
+
+        .btn-delete { border-color: #475569; color: #64748b; }
         .btn-delete:hover { border-color: var(--red); color: var(--red); background: rgba(239, 68, 68, 0.1); }
+
+        /* Verification Results */
+        .verify-box {
+            font-size: 0.8rem;
+            padding: 8px;
+            border-radius: 4px;
+            display: none; /* Hidden by default */
+            margin-top: 5px;
+            border-left: 3px solid;
+        }
+        .valid { background: rgba(16, 185, 129, 0.1); border-color: var(--green); color: var(--green); }
+        .tampered { background: rgba(239, 68, 68, 0.1); border-color: var(--red); color: var(--red); }
+        .unknown { background: rgba(245, 158, 11, 0.1); border-color: var(--orange); color: var(--orange); }
 
         /* Empty State */
         .empty-msg { padding: 20px; text-align: center; color: #475569; font-style: italic; }
 
-        /* Specific Colors based on Category ID */
+        /* Specific Colors */
         .cat-security .section-header { background: rgba(239, 68, 68, 0.2); color: var(--red); border-bottom-color: var(--red); }
         .cat-emergency .section-header { background: rgba(239, 68, 68, 0.2); color: var(--red); border-bottom-color: var(--red); }
         .cat-crash .section-header { background: rgba(245, 158, 11, 0.2); color: var(--orange); border-bottom-color: var(--orange); }
@@ -63,7 +89,7 @@
         <a href="/" class="btn-back">← LIVE MONITOR</a>
     </div>
 
-    <div id="loading" style="text-align:center; margin-top:50px;">ACCESSING DATABASE...</div>
+    <div id="loading" style="text-align:center; margin-top:50px;">ACCESSING SECURE LEDGER...</div>
 
     <div class="archive-grid" id="grid-container" style="display:none">
         </div>
@@ -83,14 +109,11 @@
             try {
                 const response = await fetch('/api/logs');
                 const data = await response.json();
-
                 renderGrid(data);
                 document.getElementById('loading').style.display = 'none';
                 document.getElementById('grid-container').style.display = 'grid';
-
             } catch (error) {
                 document.getElementById('loading').innerText = "CONNECTION ERROR: " + error;
-                console.error(error);
             }
         }
 
@@ -98,42 +121,34 @@
             const container = document.getElementById('grid-container');
             container.innerHTML = '';
 
-            // Sort categories based on our config order
-            const categories = Object.keys(data).sort((a, b) => {
-                return (CAT_CONFIG[a]?.order || 99) - (CAT_CONFIG[b]?.order || 99);
-            });
+            // Sort keys by priority
+            const keys = Object.keys(data).sort((a,b) => (CAT_CONFIG[a]?.order || 99) - (CAT_CONFIG[b]?.order || 99));
 
-            categories.forEach(catKey => {
+            keys.forEach(catKey => {
                 const files = data[catKey];
                 const config = CAT_CONFIG[catKey] || { title: catKey.toUpperCase(), order: 99 };
 
-                // Create Section Panel
                 const section = document.createElement('div');
                 section.className = `section cat-${catKey}`;
-
-                // Header
                 section.innerHTML = `
                     <div class="section-header">
                         <span>${config.title}</span>
                         <span class="count-badge">${files.length}</span>
-                    </div>
-                `;
+                    </div>`;
 
-                // File List
                 const ul = document.createElement('ul');
                 if (files.length === 0) {
                     ul.innerHTML = '<div class="empty-msg">No records found.</div>';
                 } else {
                     files.forEach(filename => {
                         const li = document.createElement('li');
+                        li.id = `row-${filename}`;
 
-                        // Parse Filename (Format: YYYYMMDD_HHMMSS_PLANEID.jsonl)
+                        // Parsing Date/Time from filename
                         let displayTime = "UNKNOWN DATE";
                         let displayId = filename;
-
                         const parts = filename.split('_');
                         if(parts.length >= 3) {
-                            // Format: 20231025 103055
                             const d = parts[0];
                             const t = parts[1];
                             displayTime = `${d.substring(0,4)}-${d.substring(4,6)}-${d.substring(6,8)} ${t.substring(0,2)}:${t.substring(2,4)}`;
@@ -141,43 +156,66 @@
                         }
 
                         li.innerHTML = `
-                            <div class="file-info">
-                                <span class="plane-id">${displayId}</span>
-                                <span class="timestamp">${displayTime}</span>
+                            <div class="row-top">
+                                <div class="file-info">
+                                    <span class="plane-id">${displayId}</span>
+                                    <span class="timestamp">${displayTime}</span>
+                                </div>
+                                <div class="btn-group">
+                                    <button class="btn-verify" onclick="verifyLog('${catKey}', '${filename}')">🛡️ VERIFY</button>
+                                    <button class="btn-delete" onclick="deleteLog('${catKey}', '${filename}')">✖</button>
+                                </div>
                             </div>
-                            <div>
-                                <a href="#" style="color:#64748b; text-decoration:none; font-size:0.7rem; margin-right:5px">VIEW</a>
-                                <button class="btn-delete" onclick="deleteLog('${catKey}', '${filename}')">DELETE</button>
-                            </div>
+                            <div id="result-${filename}" class="verify-box"></div>
                         `;
                         ul.appendChild(li);
                     });
                 }
-
                 section.appendChild(ul);
                 container.appendChild(section);
             });
         }
 
-        async function deleteLog(category, filename) {
-            if(!confirm(`PERMANENTLY DELETE RECORD?\n\nFile: ${filename}\nCategory: ${category}`)) return;
+        async function verifyLog(category, filename) {
+            const resultBox = document.getElementById(`result-${filename}`);
+            resultBox.style.display = 'block';
+            resultBox.className = 'verify-box';
+            resultBox.innerHTML = "Running cryptographic check...";
 
             try {
-                const res = await fetch(`/api/logs/${category}/${filename}`, { method: 'DELETE' });
-                const result = await res.json();
+                const res = await fetch(`/api/verify/${category}/${filename}`);
+                const data = await res.json();
 
-                if (res.ok) {
-                    // Refresh the view
-                    loadLogs();
+                if (data.status === "VALID") {
+                    resultBox.classList.add('valid');
+                    resultBox.innerHTML = `<b>✅ INTEGRITY VERIFIED</b><br>Hash matches ledger signature.<br><span style='opacity:0.7'>${data.timestamp}</span>`;
+                } else if (data.status === "TAMPERED") {
+                    resultBox.classList.add('tampered');
+                    resultBox.innerHTML = `<b>🚨 FILE TAMPERED</b><br>Hash mismatch detected.<br>Orig: ${data.original_hash.substr(0,8)}...<br>Curr: ${data.current_hash.substr(0,8)}...`;
                 } else {
-                    alert("Error deleting file: " + result.error);
+                    resultBox.classList.add('unknown');
+                    resultBox.innerHTML = `<b>⚠ UNKNOWN</b>: ${data.message}`;
                 }
             } catch (e) {
-                alert("Network error: " + e);
+                resultBox.innerHTML = "Error contacting server.";
             }
         }
 
-        // Initialize
+        async function deleteLog(category, filename) {
+            if(!confirm(`PERMANENTLY DELETE RECORD?\n${filename}`)) return;
+            try {
+                const res = await fetch(`/api/logs/${category}/${filename}`, { method: 'DELETE' });
+                if (res.ok) {
+                    const row = document.getElementById(`row-${filename}`);
+                    if(row) row.remove();
+                } else {
+                    alert("Delete failed.");
+                }
+            } catch (e) {
+                alert("Network error.");
+            }
+        }
+
         loadLogs();
     </script>
 </body>

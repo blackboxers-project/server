@@ -1,61 +1,170 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Streaming Dashboard — Early Stage</title>
-  <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
-  <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <meta charset="UTF-8">
+    <title>SkyBox Tower</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
+    <style>
+        body { background-color: #0f172a; color: #e2e8f0; font-family: 'Courier New', monospace; }
+        .radar-grid {
+            background-image:
+                linear-gradient(rgba(0, 255, 0, 0.1) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(0, 255, 0, 0.1) 1px, transparent 1px);
+            background-size: 40px 40px;
+        }
+    </style>
 </head>
-<body class="bg-gray-100 text-gray-900">
-  <div class="max-w-6xl mx-auto p-6">
-    <header class="mb-6">
-      <h1 class="text-3xl font-semibold">Streaming Dashboard</h1>
-      <p class="text-sm text-gray-600">Live device streams, ping, and payload preview — prototype stage</p>
+<body class="h-screen flex flex-col overflow-hidden">
+
+    <header class="bg-slate-900 border-b border-slate-700 p-4 flex justify-between items-center shadow-lg">
+        <div class="flex items-center gap-3">
+            <div class="w-3 h-3 rounded-full bg-green-500 animate-pulse"></div>
+            <h1 class="text-2xl font-bold tracking-widest text-green-400">SKYBOX <span class="text-white">TOWER</span></h1>
+        </div>
+        <div class="text-xs text-slate-400">
+            SYSTEM STATUS: <span class="text-green-400">ONLINE</span>
+        </div>
     </header>
 
-    <main class="grid grid-cols-3 gap-6">
-      <!-- Left column: devices -->
-      <section class="col-span-1 bg-white rounded-lg shadow p-4">
-        <h2 class="font-bold mb-3">Connected Devices</h2>
-        <div id="device-list" class="space-y-3 text-sm"></div>
-      </section>
+    <div class="flex flex-1 overflow-hidden">
 
-      <!-- Middle column: live feed -->
-      <section class="col-span-2 bg-white rounded-lg shadow p-4">
-        <div class="flex justify-between items-center mb-3">
-          <h2 class="font-bold">Live Feed</h2>
-          <div class="text-xs text-gray-500">Incoming events appear here</div>
-        </div>
-        <div id="live-feed" class="h-96 overflow-auto bg-gray-50 p-3 rounded"></div>
-      </section>
-
-      <!-- Full width charts -->
-      <section class="col-span-3 bg-white rounded-lg shadow p-4">
-        <h2 class="font-bold mb-3">Metrics</h2>
-        <div class="grid grid-cols-3 gap-4">
-          <div>
-            <canvas id="rttChart" height="100"></canvas>
-          </div>
-          <div>
-            <canvas id="ingestRateChart" height="100"></canvas>
-          </div>
-          <div>
-            <div class="font-semibold mb-2">Quick Controls</div>
-            <div class="space-y-2 text-sm">
-              <div>
-                <label class="block text-xs text-gray-500">Device to ping</label>
-                <select id="ping-device-select" class="w-full border rounded p-2"></select>
-              </div>
-              <button id="ping-btn" class="w-full bg-blue-600 text-white p-2 rounded">Ping device</button>
+        <aside class="w-1/4 bg-slate-800 border-r border-slate-700 flex flex-col">
+            <div class="p-3 bg-slate-900 font-bold border-b border-slate-700 text-sm uppercase text-slate-400">
+                Connected Flights
             </div>
-          </div>
-        </div>
-      </section>
-    </main>
-  </div>
+            <div id="fleet-list" class="flex-1 overflow-y-auto p-2 space-y-2">
+                </div>
+        </aside>
 
-  <script src="/static/js/dashboard.js"></script>
+        <main class="flex-1 flex flex-col relative radar-grid bg-slate-900/50">
+            <div class="absolute inset-0 flex items-center justify-center opacity-20 pointer-events-none">
+                <div class="w-96 h-96 border-2 border-green-500/30 rounded-full flex items-center justify-center">
+                    <div class="w-64 h-64 border border-green-500/20 rounded-full"></div>
+                </div>
+            </div>
+
+            <div id="telemetry-panel" class="p-6 grid grid-cols-3 gap-6 z-10 hidden">
+                <div class="col-span-3 bg-slate-800/80 p-4 rounded border border-slate-600 backdrop-blur">
+                    <h2 class="text-xl text-green-400 mb-1" id="active-callsign">--</h2>
+                    <div class="text-xs text-slate-300 font-mono" id="active-id">ID: --</div>
+                </div>
+
+                <div class="bg-slate-800/90 p-4 rounded border border-slate-600">
+                    <h3 class="text-xs uppercase text-slate-400 mb-2">Attitude (Gyro)</h3>
+                    <div class="text-2xl font-bold" id="val-pitch">P: 0.00</div>
+                    <div class="text-2xl font-bold" id="val-roll">R: 0.00</div>
+                    <div class="text-2xl font-bold" id="val-yaw">Y: 0.00</div>
+                </div>
+
+                <div class="bg-slate-800/90 p-4 rounded border border-slate-600">
+                    <h3 class="text-xs uppercase text-slate-400 mb-2">G-Force (Accel)</h3>
+                    <div class="text-2xl font-bold" id="val-ax">X: 0.00</div>
+                    <div class="text-2xl font-bold" id="val-ay">Y: 0.00</div>
+                    <div class="text-2xl font-bold" id="val-az">Z: 0.00</div>
+                </div>
+
+                <div class="bg-slate-800/90 p-4 rounded border border-slate-600 flex flex-col justify-center items-center">
+                    <button id="btn-record" onclick="toggleRecord()" class="w-full py-3 bg-red-900/50 text-red-400 border border-red-800 hover:bg-red-600 hover:text-white transition rounded uppercase font-bold tracking-wider">
+                        Toggle REC
+                    </button>
+                </div>
+            </div>
+
+            <div id="empty-state" class="flex-1 flex items-center justify-center text-slate-600 uppercase tracking-widest">
+                Select a flight to view telemetry
+            </div>
+        </main>
+    </div>
+
+    <script>
+        const socket = io('/tower');
+        let currentFleet = [];
+        let selectedPlaneId = null;
+
+        // --- Socket Events ---
+        socket.on('connect', () => console.log("Connected to Tower"));
+
+        socket.on('fleet_sync', (data) => {
+            currentFleet = data;
+            renderFleetList();
+            updateActivePanel();
+        });
+
+        socket.on('plane_telemetry', (msg) => {
+            if (selectedPlaneId && msg.id === selectedPlaneId) {
+                updateTelemetryUI(msg.data);
+            }
+        });
+
+        // --- UI Functions ---
+        function renderFleetList() {
+            const container = document.getElementById('fleet-list');
+            container.innerHTML = '';
+
+            currentFleet.forEach(plane => {
+                const isSelected = plane.id === selectedPlaneId;
+                const div = document.createElement('div');
+                div.className = `p-3 rounded cursor-pointer border transition ${isSelected ? 'bg-slate-700 border-green-500' : 'bg-slate-800 border-slate-700 hover:bg-slate-700'}`;
+                div.onclick = () => selectPlane(plane.id);
+
+                div.innerHTML = `
+                    <div class="flex justify-between items-center mb-1">
+                        <span class="font-bold text-lg text-white">${plane.callsign}</span>
+                        ${plane.recording ? '<span class="px-2 py-0.5 bg-red-600 text-white text-[10px] rounded font-bold animate-pulse">REC</span>' : ''}
+                    </div>
+                    <div class="text-xs text-slate-400 flex justify-between">
+                        <span>ID: ${plane.id.substring(0,8)}...</span>
+                        <span>${(Date.now()/1000 - plane.last_seen).toFixed(1)}s ago</span>
+                    </div>
+                `;
+                container.appendChild(div);
+            });
+        }
+
+        function selectPlane(id) {
+            selectedPlaneId = id;
+            document.getElementById('empty-state').classList.add('hidden');
+            document.getElementById('telemetry-panel').classList.remove('hidden');
+            renderFleetList(); // refresh to highlight
+            updateActivePanel();
+        }
+
+        function updateActivePanel() {
+            const plane = currentFleet.find(p => p.id === selectedPlaneId);
+            if (!plane) return;
+
+            document.getElementById('active-callsign').innerText = plane.callsign;
+            document.getElementById('active-id').innerText = "ID: " + plane.id;
+
+            const btn = document.getElementById('btn-record');
+            if (plane.recording) {
+                btn.innerText = "STOP RECORDING";
+                btn.className = "w-full py-3 bg-red-600 text-white border border-red-500 hover:bg-red-700 transition rounded uppercase font-bold tracking-wider shadow-[0_0_15px_rgba(220,38,38,0.7)]";
+            } else {
+                btn.innerText = "START RECORDING";
+                btn.className = "w-full py-3 bg-slate-700 text-slate-300 border border-slate-600 hover:bg-green-600 hover:text-white transition rounded uppercase font-bold tracking-wider";
+            }
+        }
+
+        function updateTelemetryUI(data) {
+            // Gyro
+            document.getElementById('val-pitch').innerText = `P: ${data.gyro.x.toFixed(2)}°`;
+            document.getElementById('val-roll').innerText  = `R: ${data.gyro.y.toFixed(2)}°`;
+            document.getElementById('val-yaw').innerText   = `Y: ${data.gyro.z.toFixed(2)}°`;
+            // Accel
+            document.getElementById('val-ax').innerText = `X: ${data.accel.x.toFixed(2)}`;
+            document.getElementById('val-ay').innerText = `Y: ${data.accel.y.toFixed(2)}`;
+            document.getElementById('val-az').innerText = `Z: ${data.accel.z.toFixed(2)}`;
+        }
+
+        function toggleRecord() {
+            if (!selectedPlaneId) return;
+            const plane = currentFleet.find(p => p.id === selectedPlaneId);
+            const action = plane.recording ? 'stop' : 'start';
+            socket.emit('toggle_record', { plane_id: selectedPlaneId, action: action });
+        }
+    </script>
 </body>
 </html>

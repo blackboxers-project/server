@@ -1,3 +1,8 @@
 flask
 flask-socketio
 eventlet
+Flask
+Flask-SocketIO
+eventlet
+simple-websocket
+numpy
