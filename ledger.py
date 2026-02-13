@@ -82,6 +82,63 @@ def log_event(action: str, target_file: str, actor_ip: str, extra_info: str = ""
             f.write(json.dumps(entry) + "\n")
 
 
+def log_telemetry(plane_id: str, data: dict):
+    """Records a telemetry data point in the blockchain ledger.
+    Each entry is hashed and chained to the previous one, making
+    every single flight data point tamper-evident."""
+    AUDIT_FILE.parent.mkdir(parents=True, exist_ok=True)
+
+    with LOCK:
+        prev_hash = get_last_chain_hash()
+
+        # Hash the raw telemetry data for integrity proof
+        data_json = json.dumps(data, sort_keys=True)
+        data_hash = hashlib.sha256(data_json.encode()).hexdigest()
+
+        entry = {
+            "timestamp": datetime.now().isoformat(),
+            "action": "LOG_ENTRY",
+            "actor": "SYSTEM",
+            "target": plane_id,
+            "evidence_hash": data_hash,
+            "telemetry": data,
+            "chain_link": prev_hash
+        }
+
+        with open(AUDIT_FILE, "a") as f:
+            line = json.dumps(entry) + "\n"
+            f.write(line)
+            f.flush()
+            os.fsync(f.fileno())
+
+
+def log_standard_ops(filepath: Path, plane_id: str):
+    """Registers a standard_ops flight in the blockchain.
+    Hashes the full archived file and chains it into the ledger,
+    ensuring normal flights are as tamper-proof as emergencies."""
+    AUDIT_FILE.parent.mkdir(parents=True, exist_ok=True)
+
+    with LOCK:
+        prev_hash = get_last_chain_hash()
+        file_hash = calculate_file_hash(filepath)
+
+        entry = {
+            "timestamp": datetime.now().isoformat(),
+            "action": "STANDARD_OPS_REGISTERED",
+            "actor": "SYSTEM",
+            "target": str(filepath.name),
+            "evidence_hash": file_hash,
+            "details": f"Normal flight {plane_id} registered in blockchain",
+            "chain_link": prev_hash
+        }
+
+        with open(AUDIT_FILE, "a") as f:
+            line = json.dumps(entry) + "\n"
+            f.write(line)
+            f.flush()
+            os.fsync(f.fileno())
+
+
 # ... (keep all previous code in ledger.py) ...
 
 def get_original_hash(filename: str) -> dict:
@@ -104,7 +161,7 @@ def get_original_hash(filename: str) -> dict:
                     entry = json.loads(line)
                     # We look for the creation/archiving event of this specific filename
                     # We check if the target PATH ends with our filename
-                    if entry['target'].endswith(filename) and entry['action'] == "FLIGHT_ARCHIVED":
+                    if entry['target'].endswith(filename) and entry['action'] in ("FLIGHT_ARCHIVED", "STANDARD_OPS_REGISTERED"):
                         found_entry = entry
                 except:
                     continue

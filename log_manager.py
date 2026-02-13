@@ -50,6 +50,9 @@ def append_log(plane_id: str, data: dict):
             # Now that we forced the write, the ledger will see the file correctly
             ledger.log_event("FLIGHT_STARTED", str(file_path), "SYSTEM", f"Plane {plane_id} connected")
 
+        # Record every telemetry data point in the blockchain
+        ledger.log_telemetry(plane_id, data)
+
     except Exception as e:
         print(f"❌ Error writing log for {plane_id}: {e}")
 
@@ -77,6 +80,11 @@ def archive_flight(plane_id: str, final_status: str, max_severity_squawk: str):
     try:
         shutil.move(str(src), str(dst))
         ledger.log_event("FLIGHT_ARCHIVED", str(dst), "SYSTEM", f"Moved to {category}")
+
+        # Register standard_ops flights explicitly in the blockchain
+        if category == "normal":
+            ledger.log_standard_ops(dst, plane_id)
+
         print(f"🗄️ ARCHIVED {plane_id} -> {category.upper()}")
     except Exception as e:
         print(f"❌ Error archiving {plane_id}: {e}")
