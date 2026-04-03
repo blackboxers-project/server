@@ -79,9 +79,10 @@ def archive_flight(plane_id: str, final_status: str, max_severity_squawk: str):
 
     try:
         shutil.move(str(src), str(dst))
-        ledger.log_event("FLIGHT_ARCHIVED", str(dst), "SYSTEM", f"Moved to {category}")
+        # Single call: logs FLIGHT_ARCHIVED + queues real blockchain anchor.
+        # Critical squawks (7500/7700) also trigger a direct EVM on-chain write.
+        ledger.log_flight_archived(dst, plane_id, category, squawk=max_severity_squawk)
 
-        # Register standard_ops flights explicitly in the blockchain
         if category == "normal":
             ledger.log_standard_ops(dst, plane_id)
 

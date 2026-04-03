@@ -8,6 +8,8 @@ from fastapi.responses import HTMLResponse, JSONResponse
 
 # IMPORT YOUR MODULES
 import log_manager
+import ledger
+import blockchain_anchor
 
 app = FastAPI()
 app.mount("/static", StaticFiles(directory="static"), name="static")
@@ -154,6 +156,34 @@ def verify_log_integrity(category: str, filename: str, request: Request):
         return JSONResponse(result)
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=500)
+
+
+@app.get("/api/chain/verify")
+def verify_chain_integrity():
+    """
+    Replays the entire ledger and verifies every chain_link.
+    Returns whether the chain is intact or has been tampered with.
+    """
+    result = ledger.verify_chain()
+    status_code = 200 if result["intact"] else 409
+    return JSONResponse(result, status_code=status_code)
+
+
+@app.get("/api/anchor/status/{hash_value}")
+def get_anchor_status(hash_value: str):
+    """
+    Returns the real-blockchain anchoring status for a given SHA-256 hash
+    (checks OriginStamp — confirms Bitcoin/Ethereum anchoring).
+    """
+    result = blockchain_anchor.get_anchor_status(hash_value)
+    return JSONResponse(result)
+
+
+@app.get("/api/anchor/log")
+def get_anchor_log():
+    """Returns all real-blockchain anchor submissions made by this server."""
+    entries = blockchain_anchor.get_all_anchors()
+    return JSONResponse({"count": len(entries), "anchors": entries})
 
 
 # --- STATIC FILES ---

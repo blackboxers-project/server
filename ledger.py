@@ -5,167 +5,302 @@ import threading
 from datetime import datetime
 from pathlib import Path
 
+import blockchain_anchor
+
 # --- CONFIGURATION ---
-# Use absolute path to match log_manager
 ROOT_DIR = Path(__file__).parent.resolve()
 AUDIT_FILE = ROOT_DIR / "flight_logs" / "secure_ledger.jsonl"
 LOCK = threading.Lock()
 
+# Single genesis sentinel — used everywhere so chain verifiers always agree.
+GENESIS_BLOCK = "GENESIS_BLOCK_000000000000000000000000"
+
+# In-memory index: filename -> last FLIGHT_ARCHIVED / STANDARD_OPS_REGISTERED entry.
+# Built once at module load; updated on every new archive write.  O(1) lookups.
+_archive_index: dict[str, dict] = {}
+_index_lock = threading.Lock()
+
+
+def _build_index():
+    """Scans the ledger once at startup to populate _archive_index."""
+    if not AUDIT_FILE.exists():
+        return
+    try:
+        with open(AUDIT_FILE, "r") as f:
+            for line in f:
+                try:
+                    entry = json.loads(line)
+                    if entry.get("action") in ("FLIGHT_ARCHIVED", "STANDARD_OPS_REGISTERED"):
+                        target = entry.get("target", "")
+                        _archive_index[target] = entry
+                except (json.JSONDecodeError, KeyError):
+                    continue
+    except Exception:
+        pass
+
+
+_build_index()
+
+
+# ---------------------------------------------------------------------------
+# Core helpers
+# ---------------------------------------------------------------------------
 
 def calculate_file_hash(filepath: Path) -> str:
-    """Generates SHA-256 Fingerprint."""
-    if not filepath.exists(): return "FILE_MISSING"
-
-    sha256_hash = hashlib.sha256()
+    """Returns SHA-256 hex digest of a file, or a sentinel string on error."""
+    if not filepath.exists():
+        return "FILE_MISSING"
+    sha256 = hashlib.sha256()
     try:
         with open(filepath, "rb") as f:
-            for byte_block in iter(lambda: f.read(4096), b""):
-                sha256_hash.update(byte_block)
-        return sha256_hash.hexdigest()
+            for chunk in iter(lambda: f.read(4096), b""):
+                sha256.update(chunk)
+        return sha256.hexdigest()
     except Exception:
         return "HASH_ERROR"
 
 
 def get_last_chain_hash() -> str:
-    """Gets the hash of the previous ledger entry to form the chain."""
+    """
+    Returns the SHA-256 of the last raw line in the ledger.
+    Returns GENESIS_BLOCK if the ledger is absent or empty.
+    Must be called inside LOCK.
+    """
     if not AUDIT_FILE.exists():
-        return "GENESIS_BLOCK_000000000000000000000000"
+        return GENESIS_BLOCK
 
     try:
-        with open(AUDIT_FILE, 'rb') as f:
+        with open(AUDIT_FILE, "rb") as f:
+            # Seek backwards to find the last non-empty line efficiently — O(1) for
+            # the common case where the last line is short (< a few KB).
             try:
                 f.seek(-2, os.SEEK_END)
-                while f.read(1) != b'\n':
+                while f.read(1) != b"\n":
                     f.seek(-2, os.SEEK_CUR)
             except OSError:
                 f.seek(0)
 
             last_line = f.readline().decode().strip()
-            if not last_line: return "GENESIS_BLOCK"
 
-            # Hash the entire previous JSON line
-            return hashlib.sha256(last_line.encode()).hexdigest()
+        if not last_line:
+            return GENESIS_BLOCK
+
+        return hashlib.sha256(last_line.encode()).hexdigest()
+
     except Exception:
-        return "BROKEN_CHAIN"
+        return GENESIS_BLOCK
+
+
+# ---------------------------------------------------------------------------
+# Write functions
+# ---------------------------------------------------------------------------
+
+def _write_entry(entry: dict, *, flush: bool = False):
+    """Serialises and appends one entry. Must be called inside LOCK."""
+    AUDIT_FILE.parent.mkdir(parents=True, exist_ok=True)
+    with open(AUDIT_FILE, "a") as f:
+        line = json.dumps(entry) + "\n"
+        f.write(line)
+        if flush:
+            f.flush()
+            os.fsync(f.fileno())
 
 
 def log_event(action: str, target_file: str, actor_ip: str, extra_info: str = ""):
-    """Writes a tamper-evident entry."""
-    # Ensure directory exists
-    AUDIT_FILE.parent.mkdir(parents=True, exist_ok=True)
-
+    """Writes a tamper-evident audit entry for any system event."""
     with LOCK:
         prev_hash = get_last_chain_hash()
 
-        # Handle Path: If target_file is absolute, use it.
-        # If relative, join it with ROOT_DIR/flight_logs
         target_path = Path(target_file)
         if not target_path.is_absolute():
             target_path = ROOT_DIR / "flight_logs" / target_file
 
-        # Generate Evidence Hash
         file_fingerprint = "N/A"
         if target_path.exists():
             file_fingerprint = calculate_file_hash(target_path)
 
         entry = {
-            "timestamp": datetime.now().isoformat(),
-            "action": action,
-            "actor": actor_ip,
-            "target": str(target_path.name),  # Store just the filename for cleaner logs
+            "timestamp":    datetime.now().isoformat(),
+            "action":       action,
+            "actor":        actor_ip,
+            "target":       target_path.name,
             "evidence_hash": file_fingerprint,
-            "details": extra_info,
-            "chain_link": prev_hash
+            "details":      extra_info,
+            "chain_link":   prev_hash,
         }
-
-        with open(AUDIT_FILE, "a") as f:
-            f.write(json.dumps(entry) + "\n")
+        _write_entry(entry)
 
 
 def log_telemetry(plane_id: str, data: dict):
-    """Records a telemetry data point in the blockchain ledger.
-    Each entry is hashed and chained to the previous one, making
-    every single flight data point tamper-evident."""
-    AUDIT_FILE.parent.mkdir(parents=True, exist_ok=True)
-
+    """
+    Records one telemetry data point in the ledger.
+    Every point is hashed and chained — tamper-evident down to the sample level.
+    """
     with LOCK:
         prev_hash = get_last_chain_hash()
 
-        # Hash the raw telemetry data for integrity proof
         data_json = json.dumps(data, sort_keys=True)
         data_hash = hashlib.sha256(data_json.encode()).hexdigest()
 
         entry = {
-            "timestamp": datetime.now().isoformat(),
-            "action": "LOG_ENTRY",
-            "actor": "SYSTEM",
-            "target": plane_id,
+            "timestamp":    datetime.now().isoformat(),
+            "action":       "LOG_ENTRY",
+            "actor":        "SYSTEM",
+            "target":       plane_id,
             "evidence_hash": data_hash,
-            "telemetry": data,
-            "chain_link": prev_hash
+            "telemetry":    data,
+            "chain_link":   prev_hash,
         }
-
-        with open(AUDIT_FILE, "a") as f:
-            line = json.dumps(entry) + "\n"
-            f.write(line)
-            f.flush()
-            os.fsync(f.fileno())
+        _write_entry(entry, flush=True)
 
 
 def log_standard_ops(filepath: Path, plane_id: str):
-    """Registers a standard_ops flight in the blockchain.
-    Hashes the full archived file and chains it into the ledger,
-    ensuring normal flights are as tamper-proof as emergencies."""
-    AUDIT_FILE.parent.mkdir(parents=True, exist_ok=True)
-
+    """Registers a normal flight archive in the ledger + anchors its hash via OriginStamp."""
     with LOCK:
         prev_hash = get_last_chain_hash()
         file_hash = calculate_file_hash(filepath)
 
         entry = {
-            "timestamp": datetime.now().isoformat(),
-            "action": "STANDARD_OPS_REGISTERED",
-            "actor": "SYSTEM",
-            "target": str(filepath.name),
+            "timestamp":    datetime.now().isoformat(),
+            "action":       "STANDARD_OPS_REGISTERED",
+            "actor":        "SYSTEM",
+            "target":       filepath.name,
             "evidence_hash": file_hash,
-            "details": f"Normal flight {plane_id} registered in blockchain",
-            "chain_link": prev_hash
+            "details":      f"Normal flight {plane_id} registered in blockchain",
+            "chain_link":   prev_hash,
         }
+        _write_entry(entry, flush=True)
 
-        with open(AUDIT_FILE, "a") as f:
-            line = json.dumps(entry) + "\n"
-            f.write(line)
-            f.flush()
-            os.fsync(f.fileno())
+        with _index_lock:
+            _archive_index[filepath.name] = entry
+
+    blockchain_anchor.queue_anchor(file_hash, f"STANDARD_OPS {plane_id} | {filepath.name}")
 
 
-# ... (keep all previous code in ledger.py) ...
+def log_flight_archived(filepath: Path, plane_id: str, category: str,
+                        squawk: str = "1200"):
+    """Adds a FLIGHT_ARCHIVED ledger entry and anchors the file hash via OriginStamp."""
+    with LOCK:
+        prev_hash = get_last_chain_hash()
+        file_hash = calculate_file_hash(filepath)
 
-def get_original_hash(filename: str) -> dict:
+        entry = {
+            "timestamp":    datetime.now().isoformat(),
+            "action":       "FLIGHT_ARCHIVED",
+            "actor":        "SYSTEM",
+            "target":       filepath.name,
+            "evidence_hash": file_hash,
+            "details":      f"Moved to {category}",
+            "chain_link":   prev_hash,
+        }
+        _write_entry(entry, flush=True)
+
+        with _index_lock:
+            _archive_index[filepath.name] = entry
+
+    blockchain_anchor.queue_anchor(
+        file_hash,
+        f"FLIGHT_ARCHIVED squawk={squawk} plane={plane_id} | {filepath.name}",
+    )
+
+
+# ---------------------------------------------------------------------------
+# Read / verification
+# ---------------------------------------------------------------------------
+
+def get_original_hash(filename: str) -> dict | None:
     """
-    Scans the ledger to find the 'FLIGHT_ARCHIVED' entry for a specific file.
-    Returns the hash that was recorded at that moment.
+    Returns the ledger entry that recorded the original archive hash for
+    a given filename.  O(1) via in-memory index (falls back to linear scan
+    if the entry predates this server session).
     """
+    with _index_lock:
+        entry = _archive_index.get(filename)
+    if entry:
+        return entry
+
+    # Fallback: linear scan (covers files archived before server started)
     if not AUDIT_FILE.exists():
         return None
-
-    found_entry = None
-
-    # We read line by line.
-    # In a real production system with millions of logs, you'd use a database.
-    # For a few thousand text logs, this is perfectly fine.
     try:
-        with open(AUDIT_FILE, 'r') as f:
+        with open(AUDIT_FILE, "r") as f:
+            found = None
             for line in f:
                 try:
-                    entry = json.loads(line)
-                    # We look for the creation/archiving event of this specific filename
-                    # We check if the target PATH ends with our filename
-                    if entry['target'].endswith(filename) and entry['action'] in ("FLIGHT_ARCHIVED", "STANDARD_OPS_REGISTERED"):
-                        found_entry = entry
-                except:
+                    e = json.loads(line)
+                    if (e.get("target", "").endswith(filename) and
+                            e.get("action") in ("FLIGHT_ARCHIVED", "STANDARD_OPS_REGISTERED")):
+                        found = e
+                except (json.JSONDecodeError, KeyError):
                     continue
+        if found:
+            with _index_lock:
+                _archive_index[filename] = found
+        return found
     except Exception:
         return None
 
-    return found_entry
+
+def verify_chain() -> dict:
+    """
+    Replays the entire ledger and checks every chain_link.
+    Returns a summary dict with 'intact' bool and list of any broken links.
+    """
+    if not AUDIT_FILE.exists():
+        return {"intact": True, "entries": 0, "breaks": [],
+                "message": "Ledger does not exist yet."}
+
+    breaks = []
+    prev_raw = None
+    count = 0
+
+    try:
+        with open(AUDIT_FILE, "r") as f:
+            for lineno, line in enumerate(f, start=1):
+                line = line.rstrip("\n")
+                if not line:
+                    continue
+                try:
+                    entry = json.loads(line)
+                except json.JSONDecodeError:
+                    breaks.append({"line": lineno, "reason": "invalid JSON"})
+                    prev_raw = line
+                    count += 1
+                    continue
+
+                if prev_raw is None:
+                    # First entry: chain_link must be GENESIS_BLOCK.
+                    # Accept the legacy "GENESIS_BLOCK" sentinel too (written by older code).
+                    valid_genesis = (GENESIS_BLOCK, "GENESIS_BLOCK")
+                    if entry.get("chain_link") not in valid_genesis:
+                        breaks.append({
+                            "line": lineno,
+                            "reason": "first entry does not link to GENESIS_BLOCK",
+                            "found": entry.get("chain_link"),
+                        })
+                else:
+                    expected = hashlib.sha256(prev_raw.encode()).hexdigest()
+                    if entry.get("chain_link") != expected:
+                        breaks.append({
+                            "line": lineno,
+                            "action": entry.get("action"),
+                            "timestamp": entry.get("timestamp"),
+                            "reason": "chain_link mismatch — entry may have been tampered with",
+                            "expected": expected[:16] + "...",
+                            "found":    str(entry.get("chain_link", ""))[:16] + "...",
+                        })
+
+                prev_raw = line
+                count += 1
+
+    except Exception as e:
+        return {"intact": False, "entries": count, "breaks": breaks,
+                "error": str(e)}
+
+    return {
+        "intact":  len(breaks) == 0,
+        "entries": count,
+        "breaks":  breaks,
+        "message": ("Chain is intact." if not breaks
+                    else f"{len(breaks)} break(s) detected — possible tampering."),
+    }

@@ -1,5 +1,4 @@
 fastapi
-ginga
 uvicorn
 flask
 websockets
@@ -8,8 +7,8 @@ flask-socketio
 eventlet
 Flask
 Flask-SocketIO
-eventlet
 simple-websocket
 numpy
+requests
 
 #uvicorn server:app --host 0.0.0.0 --port 8000 --reload
