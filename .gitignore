@@ -1,3 +1,5 @@
-/flight_logs
-/recordings
+flight_logs
 .idea
+.venv
+__pycache__
+**/__pycache__
