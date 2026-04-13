@@ -1,0 +1,60 @@
+services:
+
+  # ── FastAPI application ──────────────────────────────────────────────────
+  server:
+    build: .
+    container_name: blackbox_server
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    volumes:
+      # Flight logs + ledger are persisted on the host
+      - ./flight_logs:/app/flight_logs
+    env_file:
+      - .env
+    environment:
+      # Override the node URL so the server reaches Ganache inside Docker
+      - ETH_NODE_URL=http://ganache:8545
+    depends_on:
+      ganache:
+        condition: service_healthy
+
+  # ── Local Ethereum blockchain node (Ganache v7) ──────────────────────────
+  # Exposes a standard JSON-RPC endpoint at port 8545.
+  # Hashes are anchored by sending zero-value transactions whose `data`
+  # field encodes the SHA-256 digest — readable forever from the chain.
+  ganache:
+    image: trufflesuite/ganache:v7.9.2
+    container_name: blackbox_ganache
+    restart: unless-stopped
+    ports:
+      - "8545:8545"        # JSON-RPC (eth_sendTransaction, eth_getTransaction…)
+    command: >
+      --server.host 0.0.0.0
+      --server.port 8545
+      --wallet.mnemonic "flight log blockchain sentinel secure ledger audit chain"
+      --wallet.totalAccounts 5
+      --chain.chainId 1337
+      --chain.networkId 1337
+      --database.dbPath /data
+      --miner.blockGasLimit 12000000
+    volumes:
+      - ganache_data:/data
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - |
+          const h = require('http');
+          const req = h.request({port:8545,method:'POST',headers:{'Content-Type':'application/json'}}, r => process.exit(r.statusCode === 200 ? 0 : 1));
+          req.on('error', () => process.exit(1));
+          req.end(JSON.stringify({jsonrpc:'2.0',method:'net_version',params:[],id:1}));
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+volumes:
+  ganache_data:
+    driver: local

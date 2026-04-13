@@ -20,7 +20,7 @@ except ImportError:
     print("ERROR: Missing libraries. Please run: pip install rich websockets")
     sys.exit(1)
 
-SERVER_URL = "ws://localhost:8000/ws/plane/"
+SERVER_URL = os.environ.get("SERVER_URL", "ws://localhost:8000") + "/ws/plane/"
 
 
 # --- CROSS-PLATFORM INPUT HANDLER ---

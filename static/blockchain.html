@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>BlackBox — Blockchain Explorer</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: #0a0e1a;
+      color: #c9d1d9;
+      font-family: 'Courier New', monospace;
+      font-size: 13px;
+    }
+
+    header {
+      background: #0d1117;
+      border-bottom: 1px solid #21262d;
+      padding: 14px 24px;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+    header h1 { color: #58a6ff; font-size: 16px; letter-spacing: 2px; }
+    header nav a {
+      color: #8b949e;
+      text-decoration: none;
+      margin-left: 20px;
+      font-size: 12px;
+    }
+    header nav a:hover { color: #58a6ff; }
+
+    #status-bar {
+      background: #161b22;
+      border-bottom: 1px solid #21262d;
+      padding: 8px 24px;
+      display: flex;
+      gap: 32px;
+      font-size: 12px;
+      color: #8b949e;
+    }
+    #status-bar span { color: #c9d1d9; }
+    .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; }
+    .dot.green  { background: #3fb950; box-shadow: 0 0 6px #3fb950; }
+    .dot.red    { background: #f85149; }
+
+    main { padding: 24px; }
+
+    h2 { color: #58a6ff; font-size: 13px; letter-spacing: 1px; margin-bottom: 16px; }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+    th {
+      text-align: left;
+      color: #8b949e;
+      font-size: 11px;
+      letter-spacing: 1px;
+      padding: 6px 10px;
+      border-bottom: 1px solid #21262d;
+    }
+    td {
+      padding: 9px 10px;
+      border-bottom: 1px solid #161b22;
+      vertical-align: middle;
+    }
+    tr:hover td { background: #161b22; cursor: pointer; }
+
+    .mono { font-family: 'Courier New', monospace; font-size: 11px; color: #8b949e; }
+    .tx-hash { color: #58a6ff; }
+    .tx-hash:hover { text-decoration: underline; }
+
+    .badge {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: 10px;
+      font-weight: bold;
+      letter-spacing: 1px;
+    }
+    .badge-7500 { background: #3d1f1f; color: #f85149; border: 1px solid #f85149; }
+    .badge-7700 { background: #3d2b1f; color: #f0883e; border: 1px solid #f0883e; }
+    .badge-7600 { background: #3d3b1f; color: #e3b341; border: 1px solid #e3b341; }
+    .badge-1200 { background: #1f2d1f; color: #3fb950; border: 1px solid #3fb950; }
+    .badge-ok   { background: #1f2d1f; color: #3fb950; border: 1px solid #3fb950; }
+    .badge-err  { background: #3d1f1f; color: #f85149; border: 1px solid #f85149; }
+
+    /* Modal */
+    #modal-overlay {
+      display: none;
+      position: fixed; inset: 0;
+      background: rgba(0,0,0,0.7);
+      z-index: 100;
+      align-items: center;
+      justify-content: center;
+    }
+    #modal-overlay.open { display: flex; }
+    #modal {
+      background: #0d1117;
+      border: 1px solid #21262d;
+      border-radius: 8px;
+      width: 700px;
+      max-width: 95vw;
+      padding: 24px;
+    }
+    #modal h3 { color: #58a6ff; margin-bottom: 16px; font-size: 13px; }
+    #modal-body pre {
+      background: #161b22;
+      padding: 16px;
+      border-radius: 6px;
+      font-size: 11px;
+      overflow-x: auto;
+      white-space: pre-wrap;
+      word-break: break-all;
+      color: #c9d1d9;
+      border: 1px solid #21262d;
+    }
+    #modal-close {
+      margin-top: 14px;
+      background: #21262d;
+      color: #c9d1d9;
+      border: none;
+      padding: 6px 16px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-family: inherit;
+      font-size: 12px;
+    }
+    #modal-close:hover { background: #30363d; }
+
+    .loading { color: #8b949e; text-align: center; padding: 40px; }
+    .refresh-btn {
+      background: #21262d;
+      color: #c9d1d9;
+      border: 1px solid #30363d;
+      padding: 5px 14px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-family: inherit;
+      font-size: 12px;
+      float: right;
+    }
+    .refresh-btn:hover { background: #30363d; }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>⛓ BLOCKCHAIN EXPLORER</h1>
+  <nav>
+    <a href="/">Dashboard</a>
+    <a href="/logs">Flight Logs</a>
+    <a href="/blockchain">Blockchain</a>
+  </nav>
+</header>
+
+<div id="status-bar">
+  <div id="node-status">Node: <span id="node-url">…</span></div>
+  <div>Chain ID: <span id="chain-id">…</span></div>
+  <div>Total anchors: <span id="anchor-count">…</span></div>
+  <div>Latest block: <span id="latest-block">…</span></div>
+</div>
+
+<main>
+  <h2>
+    ANCHORED TRANSACTIONS
+    <button class="refresh-btn" onclick="load()">↻ Refresh</button>
+  </h2>
+  <div id="content"><p class="loading">Loading…</p></div>
+</main>
+
+<!-- Detail modal -->
+<div id="modal-overlay">
+  <div id="modal">
+    <h3>TRANSACTION DETAIL — ON-CHAIN VERIFICATION</h3>
+    <div id="modal-body"><pre>Loading…</pre></div>
+    <button id="modal-close" onclick="closeModal()">Close</button>
+  </div>
+</div>
+
+<script>
+  function squawkBadge(label) {
+    const m = label.match(/squawk=(\d+)/);
+    const code = m ? m[1] : '1200';
+    const labels = { '7500': 'HIJACK', '7700': 'EMERGENCY', '7600': 'RADIO FAIL', '1200': 'NORMAL' };
+    return `<span class="badge badge-${code}">${labels[code] || code}</span>`;
+  }
+
+  function planeName(label) {
+    const m = label.match(/plane=([^\s|]+)/);
+    return m ? m[1] : '—';
+  }
+
+  function shortHash(h) {
+    return h ? h.slice(0, 10) + '…' + h.slice(-6) : '—';
+  }
+
+  async function load() {
+    // Status bar
+    try {
+      const s = await fetch('/api/eth/status').then(r => r.json());
+      const dot = s.connected
+        ? '<span class="dot green"></span>'
+        : '<span class="dot red"></span>';
+      document.getElementById('node-url').innerHTML = dot + s.node;
+      document.getElementById('chain-id').textContent = s.chain_id;
+    } catch(e) {
+      document.getElementById('node-url').textContent = 'unreachable';
+    }
+
+    // Anchors
+    try {
+      const data = await fetch('/api/eth/anchors').then(r => r.json());
+      document.getElementById('anchor-count').textContent = data.count;
+
+      if (!data.count) {
+        document.getElementById('content').innerHTML = '<p class="loading">No anchors yet — fly some planes first.</p>';
+        return;
+      }
+
+      const anchors = [...data.anchors].reverse(); // newest first
+      const maxBlock = Math.max(...anchors.map(a => a.block || 0));
+      document.getElementById('latest-block').textContent = maxBlock;
+
+      const rows = anchors.map((a, i) => {
+        const statusBadge = a.status === 'ANCHORED'
+          ? '<span class="badge badge-ok">ANCHORED</span>'
+          : `<span class="badge badge-err">${a.status}</span>`;
+
+        return `<tr onclick="showTx('${a.tx_hash}', ${JSON.stringify(a).replace(/'/g, "\\'")})">
+          <td class="mono">${a.block ?? '—'}</td>
+          <td>${squawkBadge(a.label)}</td>
+          <td>${planeName(a.label)}</td>
+          <td class="mono tx-hash">${shortHash(a.tx_hash)}</td>
+          <td class="mono" style="word-break:break-all;max-width:220px;font-size:10px">${a.hash ? a.hash.slice(0,32) + '…' : '—'}</td>
+          <td>${statusBadge}</td>
+          <td class="mono" style="color:#555">${a.queued_at ? a.queued_at.slice(0,19).replace('T',' ') : '—'}</td>
+        </tr>`;
+      }).join('');
+
+      document.getElementById('content').innerHTML = `
+        <table>
+          <thead>
+            <tr>
+              <th>BLOCK</th>
+              <th>TYPE</th>
+              <th>FLIGHT</th>
+              <th>TX HASH</th>
+              <th>SHA-256 (truncated)</th>
+              <th>STATUS</th>
+              <th>TIMESTAMP</th>
+            </tr>
+          </thead>
+          <tbody>${rows}</tbody>
+        </table>`;
+    } catch(e) {
+      document.getElementById('content').innerHTML = `<p class="loading">Error: ${e}</p>`;
+    }
+  }
+
+  async function showTx(txHash, localRecord) {
+    document.getElementById('modal-overlay').classList.add('open');
+    document.getElementById('modal-body').innerHTML = '<pre>Fetching from chain…</pre>';
+
+    try {
+      // Fetch the real on-chain data via our server (which queries Ganache directly)
+      const chain = await fetch(`/api/eth/anchor/${txHash}`).then(r => r.json());
+
+      // Also fetch the raw Ganache JSON-RPC for full transparency
+      const rpc = await fetch('/api/eth/rpc', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ method: 'eth_getTransactionByHash', params: [txHash] })
+      }).then(r => r.json()).catch(() => null);
+
+      const display = {
+        "=== LOCAL RECORD (our log) ===": localRecord,
+        "=== ON-CHAIN DATA (via Ganache) ===": chain,
+        "=== RAW JSON-RPC (eth_getTransactionByHash) ===": rpc || '(proxy endpoint not available)',
+      };
+
+      document.getElementById('modal-body').innerHTML =
+        `<pre>${JSON.stringify(display, null, 2)}</pre>`;
+    } catch(e) {
+      document.getElementById('modal-body').innerHTML = `<pre>Error: ${e}</pre>`;
+    }
+  }
+
+  function closeModal() {
+    document.getElementById('modal-overlay').classList.remove('open');
+  }
+
+  document.getElementById('modal-overlay').addEventListener('click', e => {
+    if (e.target === document.getElementById('modal-overlay')) closeModal();
+  });
+
+  load();
+  setInterval(load, 10000);
+</script>
+</body>
+</html>
