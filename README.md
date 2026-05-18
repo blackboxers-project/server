@@ -66,9 +66,7 @@ tests/                pytest suite, runs against the local Ganache
   verified, with a real anchor transaction decoded field-by-field. Also covers
   what a production setup would look like (consortium chains, Merkle batching,
   HSM key custody, cost math for a real fleet).
-- **`BLOCKCHAIN.md`** — plain-English intro to blockchain hashing and chains.
-  (Note: parts predate the move to Ganache as source of truth — `STORAGE.md`
-  is the up-to-date reference.)
+
 
 ## Configuration
 
