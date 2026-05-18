@@ -1,0 +1,11 @@
+services:
+  blockchain:
+    build: ./blockchain_node
+    ports:
+      - "3333:3333"
+    volumes:
+      - blockchain_data:/data
+    restart: unless-stopped
+
+volumes:
+  blockchain_data:
