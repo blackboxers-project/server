@@ -56,6 +56,11 @@ PLANE_TYPES = {
     "B737": {"climb": 120, "speed": 1.0, "wobble": 2, "audio_base": 85, "max_alt": 35000},
     "C172": {"climb": 40, "speed": 0.5, "wobble": 15, "audio_base": 95, "max_alt": 10000},
     "F16": {"climb": 450, "speed": 2.8, "wobble": 4, "audio_base": 110, "max_alt": 50000},
+    "A220": {"climb": 100, "speed": 0.9, "wobble": 2, "audio_base": 78, "max_alt": 41000},
+    "A320": {"climb": 115, "speed": 1.0, "wobble": 2, "audio_base": 80, "max_alt": 39800},
+    "A330": {"climb": 110, "speed": 0.95, "wobble": 1, "audio_base": 82, "max_alt": 40000},
+    "A350": {"climb": 125, "speed": 1.05, "wobble": 1, "audio_base": 75, "max_alt": 43100},
+    "A380": {"climb": 95, "speed": 0.88, "wobble": 1, "audio_base": 85, "max_alt": 43000},
 }
 
 SCENARIOS = [
@@ -255,7 +260,7 @@ async def main_loop():
             key = listener.get_key()
             if key:
                 if key == ' ':
-                    manager.add_plane(random.choice(["B737", "B737", "F16", "C172"]))
+                    manager.add_plane(random.choice(["B737", "F16", "C172", "A220", "A320", "A320", "A330", "A350", "A380"]))
                 elif key == 'c':
                     manager.chaos_mode = not manager.chaos_mode
                     manager.log(f"CHAOS MODE: {'[green]ON[/green]' if manager.chaos_mode else '[red]OFF[/red]'}")
