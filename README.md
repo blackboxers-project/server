@@ -1,173 +1,92 @@
-# ✈️ BlackBox Sentinel
+# BlackBox Sentinel
 
+Tamper-evident flight-data demo: telemetry from simulated planes is streamed to
+a FastAPI server, displayed on a React dashboard, and anchored on a local
+Ethereum (Ganache) chain so any later edit to an archived flight log can be
+detected.
 
-**Secure Flight Telemetry logging & Forensics System**
+## Stack
 
-**BlackBox Sentinel** is a high-fidelity flight data recorder backend designed for accountability and non-repudiation. It captures real-time telemetry via WebSockets, automatically categorizes flights based on squawk codes/outcomes, and secures every byte of data using a **blockchain-lite immutable ledger**.
+- **Server** — FastAPI + WebSockets, Python 3.11
+- **Chain** — Ganache (local Ethereum) inside Docker, persistent `ganache_data` volume
+- **Frontend** — React + Vite
+- **Simulator** — terminal Python script that fakes a fleet of planes
 
----
-
-## 🏗️ System Architecture
-
-The system is built on a "Separation of Concerns" architecture to ensure data integrity even during server crashes.
-
-### Core Components
-
-1. **Connection Manager (`server.py`)**: Handles real-time WebSocket connections from aircraft and dashboards.
-2. **Log Manager (`log_manager.py`)**: Manages physical file I/O, forcing OS buffers to flush immediately to disk to prevent data loss.
-3. **The Ledger (`ledger.py`)**: A cryptographic auditor that creates a "Chain of Custody." Every file creation, movement, or deletion is hashed and signed.
-
----
-
-## ✨ Key Features
-
-### 1. 📂 Intelligent Sorting
-
-The system doesn't just dump logs; it analyzes the flight's history. If a pilot squawks `7700` (Emergency) but lands safely, the log is still filed under **EMERGENCY** for review.
-
-* **Standard Ops:** Clean flights.
-* **7500:** Hijacking/Security Threats.
-* **7600:** Radio Failure.
-* **7700:** General Emergency.
-* **Crash:** Signal lost while airborne + severe squawk.
-
-### 2. 🔐 Immutable Audit Trail
-
-We utilize a local **append-only ledger** (`secure_ledger.jsonl`).
-
-* **Hashing:** Every log file is fingerprinted using **SHA-256**.
-* **Chaining:** Each ledger entry contains the hash of the *previous* entry. If an attacker deletes a line in the audit log, the cryptographic chain breaks.
-* **Actor Tracking:** Records the IP address of anyone who requests, views, or deletes a file.
-
-### 3. 🛡️ Tamper Detection (Forensics)
-
-The frontend includes a **"Verify Integrity"** feature.
-
-1. User clicks "Verify" on a archived log.
-2. Server calculates the hash of the file *currently on the disk*.
-3. Server looks up the *original* hash recorded in the Ledger at the moment of archiving.
-4. **Match?** ✅ The file is original.
-5. **Mismatch?** 🚨 The file has been altered (e.g., altitude data falsified after the crash).
-
----
-
-## 🚀 Installation & Setup
-
-### Prerequisites
-
-* Python 3.8+
-* `pip`
-
-### 1. Install Dependencies
+## Run it
 
 ```bash
-pip install fastapi uvicorn websockets jinja2
-
+docker compose up --build
 ```
 
-### 2. Project Structure
+That starts three containers:
 
-Ensure your directory looks like this:
+| Container          | URL                       | Purpose                              |
+|--------------------|---------------------------|--------------------------------------|
+| `blackbox_frontend`| http://localhost:5173     | React dashboard (Logs + Blockchain)  |
+| `blackbox_server`  | http://localhost:8000     | FastAPI + WebSockets                 |
+| `blackbox_ganache` | http://localhost:8545     | Local Ethereum JSON-RPC              |
 
-```text
-/flight_tracker
-├── server.py           # Main application entry point
-├── log_manager.py      # File I/O handler
-├── ledger.py           # Cryptographic security core
-├── static/
-│   ├── index.html      # Live Dashboard
-│   ├── logs.html       # Archives & Verification Interface
-│   └── plane.html      # Plane Simulator Client
-└── flight_logs/        # (Created automatically) Stores logs & ledger
-
-```
-
-### 3. Run the Server
-
-Start the FastAPI server using Uvicorn:
+Then, from a second terminal on the host, launch the simulator:
 
 ```bash
-uvicorn server:app --reload --host 0.0.0.0 --port 8000
-
+python3 -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+python simulator.py
 ```
 
----
+Controls inside the simulator: **SPACE** launch plane · **K** crash random ·
+**L** land random · **C** chaos mode · **Q** quit.
 
-## 📡 API Documentation
+## Try the tamper demo
 
-### WebSockets
+1. Launch a plane in the simulator, let it run a few seconds, land it.
+2. Open the **Logs** page → 🛡️ VERIFY a flight → should say *VALID*.
+3. Click ☠ TAMPER on the same flight → file is edited on disk.
+4. Click 🛡️ VERIFY again → now says *TAMPERED* with the original on-chain hash.
+5. Open the **Blockchain** page → 🔍 VERIFY CHAIN → tampered file is flagged
+   in the "File Logs vs Chain" panel, while the "Blockchain Chain" panel
+   stays green (the chain itself is fine; the file changed).
 
-| Endpoint | Description |
-| --- | --- |
-| `ws://localhost:8000/ws/plane/{id}` | Connects a plane. Sends JSON telemetry. |
-| `ws://localhost:8000/ws/dashboard` | Connects a live monitoring dashboard. |
-
-### REST API
-
-| Method | Endpoint | Description |
-| --- | --- | --- |
-| **GET** | `/api/logs` | Returns a JSON list of all archived logs, grouped by category. |
-| **GET** | `/api/verify/{cat}/{file}` | **Forensic Check.** Compares current file hash vs. Ledger hash. |
-| **DELETE** | `/api/logs/{cat}/{file}` | **Destructive.** Deletes a log file (action is permanently recorded in Ledger). |
-
----
-
-## 🖥️ Usage Guide
-
-### 1. Simulating a Flight
-
-You can create a simple python script to simulate a plane connecting:
-
-```python
-# client_sim.py
-import websocket, json, time
-
-ws = websocket.WebSocket()
-ws.connect("ws://localhost:8000/ws/plane/FLIGHT_777")
-
-# Simulate standard flight
-data = {"alt": 1000, "spd": 250, "squawk": "1200", "fuel": 90}
-ws.send(json.dumps(data))
-time.sleep(1)
-
-# Simulate Emergency
-data["squawk"] = "7700" 
-ws.send(json.dumps(data))
-
-ws.close()
+## Project layout
 
 ```
-
-### 2. Verifying Evidence
-
-1. Navigate to `http://localhost:8000/logs`.
-2. Locate a flight in the **Emergency** or **Crash** section.
-3. Click the **🛡️ VERIFY** button.
-* **Green:** The file is pristine.
-* **Red:** The file content has been modified since it was archived.
-
-
-
----
-
-## 🔒 Security Specification
-
-The `secure_ledger.jsonl` file follows this schema:
-
-```json
-{
-  "timestamp": "2023-10-27T14:30:00",
-  "action": "FLIGHT_ARCHIVED",
-  "actor": "SYSTEM",
-  "target": "flight_logs/investigation/7700_emergency/20231027_FLIGHT_777.jsonl",
-  "evidence_hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-  "chain_link": "a8f9d..."
-}
-
+server.py             FastAPI app, WebSockets, REST endpoints
+log_manager.py        Disk layout for flight files, verification helpers
+ledger.py             Audit-log API — every event becomes one Ganache tx
+blockchain_eth.py     Web3 anchoring: queue worker, signing, cache, verify
+simulator.py          Terminal-based plane fleet simulator
+frontend/             React SPA (Dashboard, Logs, Blockchain pages)
+flight_logs/          On-disk flight files (live + archived). Source of truth: the chain.
+tests/                pytest suite, runs against the local Ganache
 ```
 
-> **⚠️ WARNING:** Manually editing the `secure_ledger.jsonl` file will break the cryptographic chain, alerting administrators that the audit trail itself has been compromised.
+## Where to read more
 
----
+- **`STORAGE.md`** — full walk-through of how data is stored, signed, and
+  verified, with a real anchor transaction decoded field-by-field. Also covers
+  what a production setup would look like (consortium chains, Merkle batching,
+  HSM key custody, cost math for a real fleet).
+- **`BLOCKCHAIN.md`** — plain-English intro to blockchain hashing and chains.
+  (Note: parts predate the move to Ganache as source of truth — `STORAGE.md`
+  is the up-to-date reference.)
 
-*Built with ❤️ and Paranoia by Miti*
+## Configuration
+
+`.env` (already populated for the local Ganache setup):
+
+```env
+ETH_NODE_URL=http://localhost:8545
+ETH_CHAIN_ID=1337
+ETH_PRIVATE_KEY=0x…       # signing key for all anchor transactions
+```
+
+To point at any other EVM chain (Base, Sepolia, etc.), just change those three
+values — the rest of the code is chain-agnostic. See `STORAGE.md §8` for
+guidance on going to a real testnet or mainnet.
+
+## Tests
+
+```bash
+docker compose up -d ganache    # tests need the chain
+.venv/bin/pytest tests/ -v
+```
