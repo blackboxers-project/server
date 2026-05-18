@@ -1,0 +1,62 @@
+.plane-page {
+  background: #000;
+  color: #00ff00;
+  font-family: 'Courier New', Courier, monospace;
+  text-align: center;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+}
+
+.plane-header h1 {
+  font-size: 1.5rem;
+  border-bottom: 2px solid #333;
+  padding-bottom: 10px;
+  margin-bottom: 5px;
+}
+
+.plane-id-label { color: white; font-weight: bold; font-size: 1.2rem; }
+
+.plane-panel {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 15px;
+  max-width: 400px;
+  margin: 0 auto;
+  width: 100%;
+}
+
+.conn-status { font-weight: bold; }
+@keyframes blinker { 50% { opacity: 0; } }
+.blink { animation: blinker 1s linear infinite; }
+
+.transponder { border: 2px solid #00ff00; padding: 15px; border-radius: 8px; }
+.transponder label { display: block; margin-bottom: 8px; }
+.transponder input[type="number"] {
+  background: #222; color: white; border: none;
+  font-size: 2rem; width: 120px; text-align: center; font-family: monospace;
+}
+
+.data-row {
+  display: flex; justify-content: space-between;
+  font-size: 1.2rem; border: 1px solid #333; padding: 10px; background: #111;
+}
+
+.plane-panel button {
+  padding: 15px; font-size: 1rem; font-weight: bold;
+  border: none; border-radius: 5px; cursor: pointer;
+  width: 100%; margin-bottom: 5px; text-transform: uppercase;
+  font-family: inherit;
+}
+
+.btn-connect    { background: #00ff00; color: black; font-size: 1.2rem; }
+.btn-disconnect { background: #333; color: white; }
+.pre-flight small { color: #666; display: block; font-size: 0.8rem; }
+
+.emergency-pad { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; }
+.btn-7700 { background: #ff0000; color: white; }
+.btn-7600 { background: #ffaa00; color: black; }
+.btn-7500 { background: #800000; color: white; }

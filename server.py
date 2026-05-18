@@ -21,19 +21,27 @@ logging.basicConfig(
 )
 log = logging.getLogger("server")
 
+from pathlib import Path
+
 app = FastAPI()
-app.mount("/static", StaticFiles(directory="static"), name="static")
+
+_dist = Path("frontend/dist")
+if (_dist / "assets").exists():
+    app.mount("/assets", StaticFiles(directory=str(_dist / "assets")), name="vite-assets")
 
 # ---------------------------------------------------------------------------
 # Startup
 # ---------------------------------------------------------------------------
-log_manager.setup_directories()
-
-eth_ok = blockchain_eth.is_connected()
 log.info("=== BlackBox Sentinel starting ===")
+eth_ok = blockchain_eth.is_connected()
 log.info(f"Ethereum node : {blockchain_eth.ETH_NODE_URL}  connected={eth_ok}")
 if not eth_ok:
     log.warning("Ganache is not reachable — on-chain anchoring will fail until it is up")
+else:
+    n = blockchain_eth.rebuild_cache_from_chain()
+    log.info(f"[CHAIN]    cache primed with {n} historical anchor(s)")
+
+log_manager.setup_directories()
 
 
 # ---------------------------------------------------------------------------
@@ -173,6 +181,56 @@ def delete_log_file(category: str, filename: str, request: Request):
         return JSONResponse({"error": str(e)}, status_code=500)
 
 
+@app.post("/api/tamper/log/{category}/{filename}")
+def tamper_log_file(category: str, filename: str, request: Request):
+    """
+    Demo endpoint: injects a fake telemetry value into one line of a flight log.
+    After tampering, GET /api/verify/{category}/{filename} will return TAMPERED.
+    """
+    import json as _json
+
+    if category not in log_manager.DIRS:
+        return JSONResponse({"error": "Invalid category"}, status_code=400)
+
+    file_path = log_manager.DIRS[category] / filename
+    if not file_path.parent == log_manager.DIRS[category]:
+        return JSONResponse({"error": "Invalid path"}, status_code=400)
+    if not file_path.exists():
+        return JSONResponse({"error": "File not found"}, status_code=404)
+
+    lines = file_path.read_text().splitlines(keepends=True)
+    non_empty = [(i, l) for i, l in enumerate(lines) if l.strip()]
+    if not non_empty:
+        return JSONResponse({"error": "File is empty"}, status_code=400)
+
+    # Pick the first data line and inject a fake altitude
+    idx, raw = non_empty[0]
+    try:
+        entry = _json.loads(raw)
+    except _json.JSONDecodeError:
+        return JSONResponse({"error": "First line is not valid JSON"}, status_code=400)
+
+    original_alt = entry.get("altitude", "<absent>")
+    entry["altitude"]      = 99999
+    entry["_tampered"]     = True
+    entry["_tamper_note"]  = "Altitude injected by demo tamper endpoint"
+
+    lines[idx] = _json.dumps(entry) + "\n"
+    file_path.write_text("".join(lines))
+
+    log.warning(f"[TAMPER]   flight log  {category}/{filename}  alt={original_alt}→99999")
+
+    return JSONResponse({
+        "tampered":       True,
+        "file":           filename,
+        "category":       category,
+        "field":          "altitude",
+        "original_value": str(original_alt),
+        "injected_value": 99999,
+        "hint":           f"Run GET /api/verify/{category}/{filename} to detect the tampering.",
+    })
+
+
 @app.get("/api/verify/{category}/{filename}")
 def verify_log_integrity(category: str, filename: str, request: Request):
     client_ip = request.client.host
@@ -187,9 +245,42 @@ def verify_log_integrity(category: str, filename: str, request: Request):
 
 @app.get("/api/chain/verify")
 def verify_chain_integrity():
-    result = ledger.verify_chain()
-    intact = result.get("intact", False)
-    log.info(f"[CHAIN]    verify  intact={intact}  entries={result.get('entries')}")
+    chain    = ledger.verify_chain()
+    archives = log_manager.verify_all_archives()
+
+    tampered = archives.get("tampered", [])
+    missing  = archives.get("missing", [])
+
+    intact = (chain.get("intact", False)
+              and not tampered
+              and not missing)
+
+    parts = []
+    if chain.get("breaks"):
+        parts.append(f"{len(chain['breaks'])} on-chain mismatch(es)")
+    if chain.get("errored"):
+        parts.append(f"{chain['errored']} event(s) never reached the chain")
+    if tampered:
+        parts.append(f"{len(tampered)} tampered file(s) on disk")
+    if missing:
+        parts.append(f"{len(missing)} archived file(s) missing from disk")
+
+    message = (f"All {chain.get('entries', 0)} anchor(s) verified — "
+               f"every archived flight file still matches the chain."
+               if intact else "Issues: " + "; ".join(parts) + ".")
+
+    result = {
+        **chain,
+        "intact":         intact,
+        "tampered_files": tampered,
+        "missing_files":  missing,
+        "message":        message,
+    }
+    log.info(
+        f"[CHAIN]    verify  intact={intact}  entries={result.get('entries')}  "
+        f"breaks={len(chain.get('breaks', []))}  errored={chain.get('errored', 0)}  "
+        f"tampered={len(tampered)}  missing={len(missing)}"
+    )
     return JSONResponse(result, status_code=200 if intact else 409)
 
 
@@ -243,17 +334,15 @@ async def eth_rpc_proxy(request: Request):
 
 
 # ---------------------------------------------------------------------------
-# Static pages
+# SPA fallback — serves the React app for all non-API routes
 # ---------------------------------------------------------------------------
 
-@app.get("/")
-def get_index(): return HTMLResponse(open("static/index.html").read())
-
-@app.get("/logs")
-def get_logs_page(): return HTMLResponse(open("static/logs.html").read())
-
-@app.get("/plane")
-def get_plane(): return HTMLResponse(open("static/plane.html").read())
-
-@app.get("/blockchain")
-def get_blockchain(): return HTMLResponse(open("static/blockchain.html").read())
+@app.get("/{full_path:path}")
+def spa_fallback(full_path: str = ""):
+    index = _dist / "index.html"
+    if index.exists():
+        return HTMLResponse(index.read_text())
+    return HTMLResponse(
+        "<pre>Frontend not built.\nRun: cd frontend && npm install && npm run build</pre>",
+        status_code=503,
+    )

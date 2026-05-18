@@ -8,7 +8,9 @@ services:
     ports:
       - "8000:8000"
     volumes:
-      # Flight logs + ledger are persisted on the host
+      # Source code mounted from host (changes reflected without rebuild)
+      - .:/app
+      # flight_logs overrides the subdirectory for persistence
       - ./flight_logs:/app/flight_logs
     env_file:
       - .env
@@ -55,6 +57,29 @@ services:
       retries: 10
       start_period: 10s
 
+  # ── Vite dev server (React frontend) ────────────────────────────────────
+  frontend:
+    image: node:20-slim
+    container_name: blackbox_frontend
+    restart: unless-stopped
+    working_dir: /app
+    command: sh -c "npm install && npm run dev"
+    volumes:
+      # Source code mounted from host — Vite watches it for HMR
+      - ./frontend:/app
+      # Isolated node_modules so the container's Linux build doesn't mix with the host
+      - frontend_node_modules:/app/node_modules
+    ports:
+      - "5173:5173"
+    environment:
+      # Proxy targets use Docker service names, not localhost
+      - API_URL=http://server:8000
+      - WS_URL=ws://server:8000
+    depends_on:
+      - server
+
 volumes:
   ganache_data:
+    driver: local
+  frontend_node_modules:
     driver: local
