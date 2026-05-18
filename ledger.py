@@ -5,7 +5,7 @@ import threading
 from datetime import datetime
 from pathlib import Path
 
-import blockchain_anchor
+import blockchain_eth
 
 # --- CONFIGURATION ---
 ROOT_DIR = Path(__file__).parent.resolve()
@@ -155,7 +155,7 @@ def log_telemetry(plane_id: str, data: dict):
 
 
 def log_standard_ops(filepath: Path, plane_id: str):
-    """Registers a normal flight archive in the ledger + anchors its hash via OriginStamp."""
+    """Registers a normal flight archive in the ledger + anchors its hash on-chain."""
     with LOCK:
         prev_hash = get_last_chain_hash()
         file_hash = calculate_file_hash(filepath)
@@ -174,12 +174,12 @@ def log_standard_ops(filepath: Path, plane_id: str):
         with _index_lock:
             _archive_index[filepath.name] = entry
 
-    blockchain_anchor.queue_anchor(file_hash, f"STANDARD_OPS {plane_id} | {filepath.name}")
+    blockchain_eth.queue_anchor(file_hash, f"STANDARD_OPS {plane_id} | {filepath.name}")
 
 
 def log_flight_archived(filepath: Path, plane_id: str, category: str,
                         squawk: str = "1200"):
-    """Adds a FLIGHT_ARCHIVED ledger entry and anchors the file hash via OriginStamp."""
+    """Adds a FLIGHT_ARCHIVED ledger entry and anchors the file hash on-chain."""
     with LOCK:
         prev_hash = get_last_chain_hash()
         file_hash = calculate_file_hash(filepath)
@@ -198,7 +198,7 @@ def log_flight_archived(filepath: Path, plane_id: str, category: str,
         with _index_lock:
             _archive_index[filepath.name] = entry
 
-    blockchain_anchor.queue_anchor(
+    blockchain_eth.queue_anchor(
         file_hash,
         f"FLIGHT_ARCHIVED squawk={squawk} plane={plane_id} | {filepath.name}",
     )
